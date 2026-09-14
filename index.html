@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>Kancolle Senka Planner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">KC</span>
+        <span class="brand-text">
+          <strong>Senka Planner</strong>
+          <small>戰果記録・規劃</small>
+        </span>
+      </div>
+      <nav class="nav" id="nav" aria-label="主导航"></nav>
+      <div class="sidebar-foot">
+        <span class="save-indicator is-idle" id="save-indicator" title="">就绪</span>
+        <span class="storage-hint">数据保存在本机浏览器</span>
+      </div>
+    </aside>
+
+    <main class="main" id="main" role="main"></main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <noscript>
+    <div class="panel" style="margin:24px">本工具需要启用 JavaScript 才能运行。</div>
+  </noscript>
+
+  <!-- 第三方：Chart.js UMD（本地引入，不走 CDN；MIT License） -->
+  <script src="vendor/chart.umd.min.js"></script>
+
+  <!-- 按依赖顺序加载（经典脚本 + 全局命名空间 window.KC，可直接以 file:// 打开） -->
+  <script src="js/core/utils.js"></script>
+  <script src="js/core/periods.js"></script>
+  <script src="js/core/schema.js"></script>
+  <script src="js/core/db.js"></script>
+  <script src="js/data/defaultTasks.js"></script>
+  <script src="js/core/store.js"></script>
+  <script src="js/calc/stats.js"></script>
+  <script src="js/calc/tasks.js"></script>
+  <script src="js/calc/plan.js"></script>
+  <script src="js/calc/analysis.js"></script>
+  <script src="js/ui/dom.js"></script>
+  <script src="js/ui/feedback.js"></script>
+  <script src="js/ui/nav.js"></script>
+  <script src="js/ui/theme.js"></script>
+  <script src="js/ui/components.js"></script>
+  <script src="js/ui/pages/placeholder.js"></script>
+  <script src="js/ui/pages/dashboard.js"></script>
+  <script src="js/ui/pages/records.js"></script>
+  <script src="js/ui/pages/tasks.js"></script>
+  <script src="js/ui/pages/planning.js"></script>
+  <script src="js/ui/pages/analysis.js"></script>
+  <script src="js/ui/pages/archive.js"></script>
+  <script src="js/ui/pages/settings.js"></script>
+  <script src="js/ui/pages/data.js"></script>
+  <script src="js/ui/router.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
