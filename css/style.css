@@ -267,6 +267,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .page-head h1 { font-size: 21px; letter-spacing: .2px; }
 .page-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); }
 
+/* 页头右侧：月份切换 + 主操作按钮 */
+.head-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -429,6 +432,14 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .field input[type="number"] { font-variant-numeric: tabular-nums; }
 
+/* 只读展示用输入框（如归档页的「计算战果」）：值由原始记录实时算出，不可编辑 */
+.field input.calc-readonly {
+  background: var(--panel-soft);
+  color: var(--text-muted);
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+
 .form-actions { display: flex; gap: 8px; }
 .form-hint { margin: 12px 0 0; font-size: 11.5px; color: var(--text-faint); }
 
@@ -463,16 +474,25 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .data-table tbody tr:last-child td { border-bottom: 0; }
 .data-table tbody tr:hover { background: var(--panel-soft); }
+/* ⚠️ 本表（.data-table）内的 text-align 一律写成 `.data-table .xxx` 形式。
+   原因：`.data-table th, .data-table td { text-align: left }` 的优先级是 (0,1,1)，
+   会压过任何单类名选择器 (0,1,0)——写成 `.cell-xxx { text-align: ... }` 是**不生效**的。
+   写成 `.data-table .xxx` 后优先级 (0,2,0)，才能正常覆盖。 */
+
 .data-table .num, .data-table th.num { text-align: right; }
 .data-table .actions, .data-table th.actions { text-align: right; white-space: nowrap; }
+
+/* 战果值列：表头与数值统一居中，保证上下对齐。
+   用于 战果记录「当日出击战果」/ 战果任务「战果值」/ 历史归档「最终战果」。 */
+.data-table .col-senka { text-align: center; font-weight: 600; }
 
 .row-today { background: var(--gold-soft); }
 .row-today:hover { background: var(--gold-soft-strong); }
 
 .cell-date { white-space: nowrap; font-family: var(--mono); font-size: 13px; }
-.cell-num { text-align: right; font-weight: 600; }
+.data-table .cell-num { text-align: right; font-weight: 600; }
 .cell-note { max-width: 320px; overflow-wrap: anywhere; color: var(--text-muted); }
-.cell-actions { text-align: right; }
+.data-table .cell-actions { text-align: right; }
 .cell-actions .btn + .btn { margin-left: 6px; }
 
 .tag {
@@ -584,6 +604,25 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-size: 11px;
   color: var(--text-faint);
   line-height: 1.3;
+}
+
+/* 日课 / 周课的期次选择（补录历史周期用）：紧凑版下拉，放在表格行内 */
+.period-pick {
+  height: 26px;
+  max-width: 150px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.period-pick:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .task-row.is-done td.cell-name { color: var(--text-muted); }
@@ -706,16 +745,36 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .dash-split > .panel { margin-bottom: 0; }
 
-.spark { display: block; width: 100%; height: 92px; }
-.spark-area { fill: var(--chart-fill); stroke: none; }
+/* 趋势折线图（等比缩放，带横纵坐标；配色全部走变量） */
 
-.spark-line {
+.trend-chart { display: block; width: 100%; height: auto; }
+
+.trend-grid { stroke: var(--border); stroke-width: 1; }
+
+.trend-axis,
+.trend-tick-mark { stroke: var(--border-strong); stroke-width: 1; }
+
+.trend-tick {
+  fill: var(--text-faint);
+  font-family: var(--font);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-area { fill: var(--chart-fill); stroke: none; }
+
+.trend-line {
   fill: none;
   stroke: var(--senka-planned);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+}
+
+.trend-dot {
+  fill: var(--senka-planned);
+  stroke: var(--panel);
+  stroke-width: 1;
 }
 
 .spark-meta {
@@ -729,6 +788,105 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   color: var(--text-faint);
 }
 
+/* 战果日历（周一为第一列；格内下方显示当日出击战果） */
+
+.cal-head,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cal-head { margin-bottom: 6px; }
+
+.cal-head span {
+  padding-bottom: 4px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.cal-head span.is-weekend { color: var(--text-muted); }
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+  min-height: 54px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.cal-cell.is-blank { border-color: transparent; background: transparent; }
+
+.cal-day {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-val {
+  min-height: 18px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--senka-actual);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.2px;
+}
+
+.cal-cell.is-today {
+  border-color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.cal-cell.is-today .cal-day { color: var(--gold); font-weight: 600; }
+
+.cal-cell.is-future { border-style: dashed; }
+.cal-cell.is-future .cal-day { opacity: .5; }
+
+/* 战果记录页的「日历模式」：格内直接输入当日出击战果 */
+.cal-cell.is-editable { gap: 4px; }
+
+.cal-cell.has-value {
+  border-color: var(--border-strong);
+  background: var(--panel);
+}
+
+.cal-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.cal-input::-webkit-outer-spin-button,
+.cal-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.cal-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.cal-input:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
 .mini-stats {
   display: flex;
   gap: 22px;
@@ -739,7 +897,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-size: 12.5px;
   color: var(--text-muted);
 }
-
 .mini-stats em {
   font-style: normal;
   font-size: 16px;
@@ -946,6 +1103,22 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-weight: 400;
 }
 
+.detail-note code {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.detail-note .btn { margin-left: 8px; }
+
+/* 外部链接（例如历史归档的「人事表」图片，点击才访问网络） */
+.ext-link {
+  color: var(--primary-dark);
+  font-weight: 500;
+}
+
+.ext-link:hover { text-decoration: underline; }
+
 .reward-list {
   list-style: none;
   margin: 0;
@@ -1135,4 +1308,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .sidebar-foot { align-items: center; }
   .save-indicator { font-size: 0; }
   .main { padding: 20px 16px 48px; }
+  .cal-cell { min-height: 44px; padding: 5px 6px; }
+  .cal-val { font-size: 12px; }
 }

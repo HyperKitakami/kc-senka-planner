@@ -91,6 +91,28 @@
     });
   }
 
+  /**
+   * 若目标月份已归档，按 docs/06_data_strategy.md §4.2 要求用户显式确认，
+   * 避免补录 / 修改无声地影响已归档月份的结果。
+   * 战果记录 / 战果任务 / 战果规划三页共用。
+   * @param {string} month 'YYYY-MM'
+   * @param {string} action 动作描述，如「修改该月任务完成状态」
+   * @returns {Promise<boolean>} 未归档或用户确认时返回 true
+   */
+  function confirmArchivedMonth(month, action) {
+    const archive = KC.store.getArchive(month);
+    if (!archive) return Promise.resolve(true);
+    return confirmDialog({
+      title: '该月份已归档',
+      message: U.monthLabel(month) + ' 已有归档记录（最终战果 ' +
+        U.formatNumber(archive.finalSenka) + '）。\n' +
+        action + '会改变该月的实时计算结果，但不会自动更新归档快照。确定继续吗？',
+      okText: '继续',
+      danger: true
+    });
+  }
+
   KC.toast = toast;
   KC.confirmDialog = confirmDialog;
+  KC.confirmArchivedMonth = confirmArchivedMonth;
 })(window.KC = window.KC || {});

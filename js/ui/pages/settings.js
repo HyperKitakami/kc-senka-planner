@@ -3,6 +3,7 @@
    依据 docs/02_ui.md §4.8、docs/03_data.md Settings。
 
    覆盖 docs 列出的五类配置：外观、首页显示内容、默认规划方式、数据相关设置、其它偏好。
+   另含「游戏服务器」（用于自动生成历史归档的人事表地址）。
    设置只影响展示与默认值，**不影响任何历史数据**。
    ========================================================================== */
 (function (KC) {
@@ -152,6 +153,37 @@
       '</div>';
   }
 
+  function serverPanel() {
+    const current = KC.store.getSettings().server || '';
+
+    const options = ['<option value="">未设定</option>'].concat(
+      KC.schema.SERVERS.map(function (s) {
+        return '<option value="' + s.code + '"' + (s.code === current ? ' selected' : '') + '>' +
+          U.escapeHtml(s.code + ' · ' + s.name) + '</option>';
+      })
+    ).join('');
+
+    // 用「最近一个已结束的战果归属月」做示例，与归档表单的默认月份一致
+    const sampleMonth = U.addMonths(KC.periods.currentAttributionMonth(new Date()), -1);
+    const sample = KC.schema.rankImageUrl(sampleMonth, current);
+
+    return '<div class="panel">' +
+      '<div class="panel-head"><h2>游戏服务器</h2>' +
+        '<span class="panel-count">用于自动生成「人事表」图片地址</span></div>' +
+      '<div class="mode-row">' +
+        '<span class="field-label">所在服务器</span>' +
+        '<select data-act="set-server" class="inline-select">' + options + '</select>' +
+      '</div>' +
+      '<p class="form-hint">「历史归档」详情里的「人事表」地址由 <strong>归档月份 + 服务器编号</strong> 自动拼成：' +
+        '<code>rank + 年(2位) + 月(2位) + 服务器编号(2位) + .jpg</code>。' +
+        (sample
+          ? '当前设置下，' + U.escapeHtml(U.monthLabel(sampleMonth)) + ' 对应 <code>' +
+            U.escapeHtml(sample) + '</code>。'
+          : '') +
+        '该图片由游戏官方服务器提供，本工具只在点击链接时才访问网络。</p>' +
+      '</div>';
+  }
+
   function dataPanel() {
     const st = KC.store.state;
     const settings = KC.store.getSettings();
@@ -185,7 +217,8 @@
       '<p class="panel-desc">Kancolle Senka Planner —— 完全本地运行的《艦隊これくしょん》战果记录、规划与统计工具。' +
         '无需服务器、无需数据库，双击 <code>index.html</code> 即可离线使用。</p>' +
       '<p class="form-hint">数据默认保存在本机浏览器中。浏览器清理站点数据会一并清除，请定期在「数据管理」中导出 JSON 备份。' +
-        '图表由本地引入的 Chart.js 渲染，不访问任何外部网络。</p>' +
+        '图表由本地引入的 Chart.js 渲染，程序自身不访问任何外部网络；' +
+        '只有你主动点击「历史归档」里的人事表链接时，浏览器才会去游戏官方服务器取图。</p>' +
       '</div>';
   }
 
@@ -203,6 +236,7 @@
       appearancePanel() +
       dashboardPanel() +
       planningPanel() +
+      serverPanel() +
       dataPanel() +
       aboutPanel();
   }
@@ -223,6 +257,11 @@
     const mode = value === 'period' ? 'period' : 'recent';
     const days = value === 'period' ? 7 : (Number(String(value).split(':')[1]) || 7);
     try { await KC.store.saveSettings({ predictionMode: mode, predictionDays: days }); }
+    catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
+  }
+
+  async function setServer(code) {
+    try { await KC.store.saveSettings({ server: code || null }); }
     catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
   }
 
@@ -264,6 +303,7 @@
     const act = el.dataset.act;
     if (act === 'toggle-card') toggleCard(el.dataset.id, el.checked);
     else if (act === 'set-prediction') setPrediction(el.value);
+    else if (act === 'set-server') setServer(el.value);
   }
 
   /* -------------------------------------------------------------- 生命周期 */

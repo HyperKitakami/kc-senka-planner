@@ -41,6 +41,64 @@
   const SETTINGS_KEY = 'user';
 
   /**
+   * 游戏服务器（共 20 个）。
+   * 编号即「人事表」图片文件名末尾的 2 位数字。
+   * 来源：舰娘百科「服务器」条目。
+   */
+  const SERVERS = [
+    { code: '01', name: '横须贺镇守府' },
+    { code: '02', name: '吴镇守府' },
+    { code: '03', name: '佐世保镇守府' },
+    { code: '04', name: '舞鹤镇守府' },
+    { code: '05', name: '大凑警备府' },
+    { code: '06', name: '特鲁克泊地' },
+    { code: '07', name: '林加泊地' },
+    { code: '08', name: '拉包尔基地' },
+    { code: '09', name: '肖特兰泊地' },
+    { code: '10', name: '布因基地' },
+    { code: '11', name: '塔威塔威泊地' },
+    { code: '12', name: '帕劳泊地' },
+    { code: '13', name: '文莱泊地' },
+    { code: '14', name: '单冠湾泊地' },
+    { code: '15', name: '幌筵泊地' },
+    { code: '16', name: '宿毛湾泊地' },
+    { code: '17', name: '鹿屋基地' },
+    { code: '18', name: '岩川基地' },
+    { code: '19', name: '佐伯湾泊地' },
+    { code: '20', name: '柱岛泊地' }
+  ];
+
+  /** 人事表图片地址前缀（由游戏官方服务器提供，非本工具资源） */
+  const RANK_IMAGE_BASE = 'https://w00g.kancolle-server.com/kcscontents/information/image/';
+
+  /** 按编号取服务器名称；未知编号返回 null */
+  function serverName(code) {
+    const hit = SERVERS.filter(function (s) { return s.code === code; })[0];
+    return hit ? hit.name : null;
+  }
+
+  /**
+   * 自动生成某月「人事表」图片地址。
+   * 文件名规则：rank + 年(2 位) + 月(2 位) + 服务器编号(2 位) + .jpg
+   *   例：2017 年 4 月 · 佐世保镇守府(03) → rank170403.jpg
+   *
+   * 该地址完全由「归档月份 + 服务器设置」推导，属运行时计算结果，
+   * 不写入数据库（docs/03_data.md §1.2 保存事实，不保存计算结果）。
+   *
+   * @param {string} monthKey 'YYYY-MM'
+   * @param {string} serverCode '01'～'20'
+   * @returns {string|null} 参数不合法（月份格式错误或未设定服务器）时返回 null
+   */
+  function rankImageUrl(monthKey, serverCode) {
+    const month = String(monthKey || '');
+    const code = String(serverCode || '');
+    if (!/^\d{4}-\d{2}$/.test(month)) return null;
+    if (!/^\d{2}$/.test(code)) return null;
+    const p = month.split('-');
+    return RANK_IMAGE_BASE + 'rank' + p[0].slice(2) + p[1] + code + '.jpg';
+  }
+
+  /**
    * 奖励区间（docs/01_requirements.md §5.2），按最终排名划分。
    * 采用标准枚举；未来新增区间只需在此追加一项，其余代码无需改动。
    */
@@ -66,7 +124,8 @@
      */
     dashboardOrder: [
       'currentSenka', 'target', 'remainingTarget', 'monthEndForecast',
-      'todayGrowth', 'naturalDaily', 'requiredDaily', 'remainingPeriod'
+      'todayGrowth', 'naturalDaily', 'requiredDaily', 'remainingPeriod',
+      'calendar'
     ],
     dashboardHidden: [],
     /** 默认预测方式（docs/04_calculation.md §十一）：
@@ -75,6 +134,13 @@
     predictionDays: 7,
     /** 规划展示口径：actual（实际统计）| combined（综合进度，仅运行时计算） */
     planningMode: 'actual',
+    /** 战果记录页的录入模式：list（表单 + 表格）| calendar（月历快速录入） */
+    recordsMode: 'list',
+    /**
+     * 所在游戏服务器编号（'01'～'20'），null 表示未设定。
+     * 仅用于自动生成「人事表」图片地址，不影响任何业务数据。
+     */
+    server: null,
     /** 最近一次导出数据的时间（仅作提醒，便于用户判断备份是否过期） */
     lastExportAt: null
   };
@@ -176,6 +242,11 @@
     RESET_CYCLES: ['NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'EVENT'],
     /** 奖励区间枚举（docs/01_requirements.md §5.2） */
     REWARD_TIERS: REWARD_TIERS,
+    /** 游戏服务器枚举（编号 + 名称） */
+    SERVERS: SERVERS,
+    RANK_IMAGE_BASE: RANK_IMAGE_BASE,
+    serverName: serverName,
+    rankImageUrl: rankImageUrl,
     MIGRATIONS: MIGRATIONS,
     createConfig: createConfig,
     createMonthlyContext: createMonthlyContext,

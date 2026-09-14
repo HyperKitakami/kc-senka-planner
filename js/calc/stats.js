@@ -98,11 +98,59 @@
     };
   }
 
+  /**
+   * 某月的日历网格（周一为每周第一列）。
+   * 仅返回本月内的日期；首行留白数量由 leading 表示。
+   * value 为当日出击战果（DailyRecord 中唯一有明确"日"归属的数据），
+   * 无记录为 null，以区分「当天未记录」与「当天为 0」。
+   */
+  function monthCalendar(records, monthKey, now) {
+    now = now || new Date();
+    const daysInMonth = U.daysInMonth(monthKey);
+    const p = String(monthKey).split('-').map(Number);
+    // getDay(): 周日=0 … 周六=6；转换为 周一=0 … 周日=6
+    const leading = (new Date(p[0], p[1] - 1, 1).getDay() + 6) % 7;
+
+    const map = {};
+    recordsOfMonth(records || [], monthKey).forEach(function (r) {
+      map[r.date] = Number(r.sortieSenka) || 0;
+    });
+
+    const todayKey = U.toDateKey(now);
+    const cells = [];
+    let count = 0;
+    let total = 0;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = monthKey + '-' + U.pad2(d);
+      const has = Object.prototype.hasOwnProperty.call(map, key);
+      const value = has ? map[key] : null;
+      if (has) { count++; total += value; }
+      cells.push({
+        date: key,
+        day: d,
+        value: value,
+        isToday: key === todayKey,
+        isFuture: key > todayKey   // 'YYYY-MM-DD' 可直接按字符串比较
+      });
+    }
+
+    return {
+      monthKey: monthKey,
+      daysInMonth: daysInMonth,
+      leading: leading,
+      cells: cells,
+      count: count,
+      total: U.round2(total)
+    };
+  }
+
   KC.calc = KC.calc || {};
   KC.calc.stats = {
     recordsOfMonth: recordsOfMonth,
     monthSummary: monthSummary,
     dailySeries: dailySeries,
-    recentSummary: recentSummary
+    recentSummary: recentSummary,
+    monthCalendar: monthCalendar
   };
 })(window.KC = window.KC || {});

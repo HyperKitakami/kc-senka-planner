@@ -167,6 +167,24 @@
     return forMonth(store, KC.periods.currentAttributionMonth(now), now);
   }
 
+  /**
+   * 某月**用于展示**的规划池（首页 / 战果规划 / 数据分析 / 战果任务共用）。
+   *
+   * 规划池只对"当前战果归属月"有意义（战果规划页也只能操作当前月）：
+   *   · 该月保存过 planningPool → 用保存的选择（历史月也能回看当时的选择）
+   *   · 当前月但没保存过       → 用生效规划池（默认纳入规划池的任务），与首页一致
+   *   · 历史月且没保存过       → 空池，不得用默认值凭空捏造"已规划战果"
+   *
+   * 注意：战果任务页**修改**规划池时仍应基于 store.getEffectivePlanningPool(month)
+   * （从默认选择出发），本函数只负责展示口径。
+   */
+  function displayPoolIds(store, monthKey, now) {
+    const saved = store.getMonthlyContext(monthKey);
+    if (saved && Array.isArray(saved.planningPool)) return saved.planningPool.slice();
+    const current = KC.periods.currentAttributionMonth(now || new Date());
+    return monthKey === current ? store.getEffectivePlanningPool(monthKey) : [];
+  }
+
   /** 进度条分段占比（相对目标；无目标时以规划战果为基准） */
   function progressSegments(plan) {
     const ref = Math.max(plan.targetSenka || 0, plan.plannedSenka, plan.actualSenka, 1);
@@ -183,6 +201,7 @@
     buildPlan: buildPlan,
     forMonth: forMonth,
     forCurrentMonth: forCurrentMonth,
+    displayPoolIds: displayPoolIds,
     progressSegments: progressSegments
   };
 })(window.KC = window.KC || {});

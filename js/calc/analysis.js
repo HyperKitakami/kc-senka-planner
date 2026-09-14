@@ -79,10 +79,18 @@
 
   /**
    * 某月的战果构成（继承 / 出击 / EO / 任务）。
-   * 固定用实际统计口径，且不带规划池——分析页只关心"已经发生了什么"。
+   *
+   * 口径固定为实际统计（mode: 'actual'）——分析页的构成只关心"已经发生了什么"。
+   * 但同一份 plan 还驱动「战果进度」卡片的"已规划战果"（poolSenka），
+   * 因此当前月的规划池必须按生效选择传入；传 [] 会让已规划战果恒为 0、进度条中段恒为空。
+   * （构成 parts 与 actualSenka 均不受规划池影响，故不影响构成图与各指标卡。）
+   * 展示口径（历史月不凭空捏造规划池）统一由 KC.calc.plan.displayPoolIds 负责。
    */
   function monthComposition(store, monthKey, now) {
-    const plan = KC.calc.plan.forMonth(store, monthKey, now, { mode: 'actual', poolIds: [] });
+    const plan = KC.calc.plan.forMonth(store, monthKey, now, {
+      mode: 'actual',
+      poolIds: KC.calc.plan.displayPoolIds(store, monthKey, now)
+    });
     const parts = [
       { key: 'inherited', label: '继承战果', value: plan.inheritedSenka },
       { key: 'sortie',    label: '出击战果', value: plan.sortieTotal },

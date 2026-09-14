@@ -7,6 +7,8 @@
      · 规划计算展示：当前目标、剩余目标、自然日均、所需日均、预计月底战果、剩余周期
      · 展示口径切换（实际统计 / 综合进度）—— 仅影响显示，不影响数据存储
      · 预测方式切换（最近 3 / 7 / 14 / 30 天、当前周期平均）
+     · 切换「战果归属月」以补录历史月份的继承战果 / 月目标
+       （docs/04_calculation.md §十五、docs/06_data_strategy.md §4.1）
 
    注意：本页只读取与展示，所有数字均为运行时计算，不写入数据库
         （唯一写入的是 MonthlyContext 与 Settings 中的参数与偏好）。
@@ -26,7 +28,11 @@
     { value: 'period',    label: '当前周期平均' }
   ];
 
-  const pageState = { container: null };
+  const pageState = {
+    container: null,
+    /** 当前查看的「战果归属月」；null = 本月。切换后即可补录该月的继承战果 / 月目标 */
+    month: null
+  };
 
   let unsubscribe = null;
   let handlers = null;
@@ -34,7 +40,7 @@
   /* ------------------------------------------------------------ 小工具 */
 
   function planningMonth() {
-    return KC.periods.currentAttributionMonth(new Date());
+    return pageState.month || KC.periods.currentAttributionMonth(new Date());
   }
 
   function slot(id) {
@@ -45,8 +51,16 @@
     return U.toDateKey(d) + ' ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes());
   }
 
+  /**
+   * 当前查看的归属月的规划结果（切到历史月即为该月的回看 / 补录）。
+   * 规划池用展示口径：历史月没保存过规划池时为空，不凭空捏造"已规划战果"。
+   */
   function currentPlan() {
-    return KC.calc.plan.forCurrentMonth(KC.store, new Date());
+    const now = new Date();
+    const month = planningMonth();
+    return KC.calc.plan.forMonth(KC.store, month, now, {
+      poolIds: KC.calc.plan.displayPoolIds(KC.store, month, now)
+    });
   }
 
   /* -------------------------------------------------------------- 渲染 */
@@ -188,7 +202,7 @@
     const el = slot('plan-sub');
     if (!el) return;
     const month = planningMonth();
-    el.textContent = '规划月份 ' + U.monthLabel(month) +
+    el.textContent = '战果归属月 ' + U.monthLabel(month) +
       ' · 战果归属区间 ' + fmtDateTime(KC.periods.attributionStart(month)) +
       ' ～ ' + fmtDateTime(KC.periods.attributionEnd(month));
   }
@@ -237,8 +251,9 @@
             '<button type="submit" class="btn btn-primary">保存参数</button>' +
           '</div>' +
         '</form>' +
-        '<p class="form-hint">目标与继承战果仅用于规划，不影响任何历史数据。继承战果每月仅一个值；' +
-          '每年 12 月末清零，次年 1 月为 0。所需日均与预计月底战果的终点均为本月末日 21:00（战果结算时刻）。</p>' +
+        '<p class="form-hint">继承战果会计入该月的实际战果，可切到历史月份补录；月目标仅用于规划，不影响历史统计。' +
+          '继承战果每月仅一个值；每年 12 月末清零，次年 1 月为 0。' +
+          '所需日均与预计月底战果的终点均为本月末日 21:00（战果结算时刻）。</p>' +
       '</div>';
   }
 
@@ -253,7 +268,7 @@
 
   /* -------------------------------------------------------------- 交互 */
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const form = e.target;
     if (!form || form.id !== 'plan-form') return;
@@ -282,19 +297,24 @@
     const predictionMode = pred === 'period' ? 'period' : 'recent';
     const predictionDays = pred === 'period' ? 7 : (Number(pred.split(':')[1]) || 7);
 
-    Promise.all([
-      KC.store.saveMonthlyContext(month, {
-        inheritedSenka: U.round2(inherited),
-        targetSenka: target,
-        note: String(fd.get('note') || '').trim()
-      }),
-      KC.store.saveSettings({ predictionMode: predictionMode, predictionDays: predictionDays })
-    ]).then(function () {
+    // 补录历史月份时，若该月已归档，按 docs/06_data_strategy.md §4.2 要求显式确认
+    const ok = await KC.confirmArchivedMonth(month, '修改该月继承战果 / 月目标');
+    if (!ok) return;
+
+    try {
+      await Promise.all([
+        KC.store.saveMonthlyContext(month, {
+          inheritedSenka: U.round2(inherited),
+          targetSenka: target,
+          note: String(fd.get('note') || '').trim()
+        }),
+        KC.store.saveSettings({ predictionMode: predictionMode, predictionDays: predictionDays })
+      ]);
       renderForm();
-      KC.toast('已保存规划参数', 'ok');
-    }).catch(function (err) {
+      KC.toast('已保存规划参数（' + U.monthLabel(month) + '）', 'ok');
+    } catch (err) {
       KC.toast(err.message, 'error');
-    });
+    }
   }
 
   function handleClick(e) {
@@ -310,25 +330,60 @@
         .catch(function (err) { KC.toast(err.message, 'error'); });
     } else if (act === 'goto-tasks') {
       KC.router.navigate('tasks');
+    } else if (act === 'prev-month') {
+      switchMonth(U.addMonths(planningMonth(), -1));
+    } else if (act === 'next-month') {
+      switchMonth(U.addMonths(planningMonth(), 1));
+    } else if (act === 'this-month') {
+      switchMonth(KC.periods.currentAttributionMonth(new Date()));
     }
   }
 
   /* -------------------------------------------------------------- 生命周期 */
 
   function buildShell() {
+    const month = planningMonth();
+    const isCurrent = month === KC.periods.currentAttributionMonth(new Date());
+
     pageState.container.innerHTML =
       '<div class="page-head">' +
         '<div>' +
           '<h1>战果规划</h1>' +
           '<p class="page-sub" id="plan-sub"></p>' +
         '</div>' +
-        '<div class="segmented" id="mode-switch" role="group" aria-label="展示口径">' +
-          '<button type="button" data-act="mode" data-mode="actual">实际统计口径</button>' +
-          '<button type="button" data-act="mode" data-mode="combined">综合进度口径</button>' +
+        '<div class="head-tools">' +
+          '<div class="month-switch">' +
+            '<button type="button" class="btn btn-icon" data-act="prev-month" title="上个月" aria-label="上个月">‹</button>' +
+            '<span class="month-label">' + U.escapeHtml(U.monthLabel(month)) + '</span>' +
+            '<button type="button" class="btn btn-icon" data-act="next-month" title="下个月" aria-label="下个月">›</button>' +
+            (isCurrent ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-act="this-month">回到本月</button>') +
+          '</div>' +
+          '<div class="segmented" id="mode-switch" role="group" aria-label="展示口径">' +
+            '<button type="button" data-act="mode" data-mode="actual">实际统计口径</button>' +
+            '<button type="button" data-act="mode" data-mode="combined">综合进度口径</button>' +
+          '</div>' +
         '</div>' +
       '</div>' +
       '<div id="plan-top"></div>' +
       '<div id="plan-form-slot"></div>';
+  }
+
+  /**
+   * 切换「战果归属月」（补录历史继承战果 / 月目标用）。
+   * 页头的月份文案要一起更新，所以整页重绘。
+   */
+  function switchMonth(month) {
+    pageState.month = month;
+    render();
+  }
+
+  /** 整页重绘：挂载时与切换归属月时使用 */
+  function render() {
+    buildShell();
+    renderSub();
+    updateModeButtons();
+    renderTop();
+    renderForm();
   }
 
   KC.pages.planning = {
@@ -346,11 +401,7 @@
         renderTop();
       });
 
-      buildShell();
-      renderSub();
-      updateModeButtons();
-      renderTop();
-      renderForm();
+      render();
     },
     unmount: function () {
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
@@ -360,6 +411,7 @@
       }
       handlers = null;
       pageState.container = null;
+      pageState.month = null;
     }
   };
 })(window.KC = window.KC || {});

@@ -212,6 +212,51 @@
     return { id: 'all', start: null, end: null };
   }
 
+  /**
+   * 当前时刻是否已过本月「任务战果归属截止」（本月末日 13:00）。
+   * 过了之后完成的任务，其战果归属次月（docs/04_calculation.md §4.3）。
+   */
+  function pastTaskCutoff(now) {
+    now = now || new Date();
+    const month = U.monthKeyOf(U.toDateKey(now));
+    return now.getTime() >= attributionEnd(month, 'TASK').getTime();
+  }
+
+  /**
+   * 当前时刻所属的「任务战果归属月」（任务口径：本月末日 13:00 之后为次月）。
+   * 与 currentAttributionMonth（出击口径 21:00）是两套边界，不得混用。
+   */
+  function currentTaskAttributionMonth(now) {
+    now = now || new Date();
+    const month = U.monthKeyOf(U.toDateKey(now));
+    return pastTaskCutoff(now) ? U.addMonths(month, 1) : month;
+  }
+
+  /**
+   * 某月「任务战果归属区间」：前月末日 13:00 ～ 本月末日 13:00（左闭右开）。
+   * 判定一条完成记录归属哪个月时，看它的完成时刻落在哪个区间。
+   */
+  function taskAttributionWindow(monthKey) {
+    return {
+      start: attributionEnd(U.addMonths(monthKey, -1), 'TASK'),
+      end: attributionEnd(monthKey, 'TASK')
+    };
+  }
+
+  /**
+   * 某时刻落在「任务战果归属区间」的哪个月（'YYYY-MM'）。
+   * 本月末日 13:00 之后完成的算次月。
+   */
+  function taskAttributionMonthOf(at) {
+    const month = U.monthKeyOf(U.toDateKey(at));
+    return at.getTime() >= attributionEnd(month, 'TASK').getTime() ? U.addMonths(month, 1) : month;
+  }
+
+  /** 某月是否为「季度第三月」（2/5/8/11 月）——季常战果在此月有失效例外 */
+  function isQuarterLastMonth(monthKey) {
+    return [2, 5, 8, 11].indexOf(Number(String(monthKey).split('-')[1])) >= 0;
+  }
+
   KC.periods = {
     ATTRIBUTION_HOUR: ATTRIBUTION_HOUR,
     REFRESH_HOUR: REFRESH_HOUR,
@@ -219,6 +264,11 @@
     attributionEnd: attributionEnd,
     attributionStart: attributionStart,
     currentAttributionMonth: currentAttributionMonth,
+    pastTaskCutoff: pastTaskCutoff,
+    currentTaskAttributionMonth: currentTaskAttributionMonth,
+    taskAttributionWindow: taskAttributionWindow,
+    taskAttributionMonthOf: taskAttributionMonthOf,
+    isQuarterLastMonth: isQuarterLastMonth,
     elapsedDays: elapsedDays,
     remainingDays: remainingDays,
     elapsedDayCount: elapsedDayCount,

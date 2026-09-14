@@ -307,11 +307,29 @@
   }
 
   /**
+   * 归一化为 ISO 字符串。接受 Date / ISO 字符串 / 时间戳，非法值回退当前时刻。
+   * 不用 `instanceof Date` 判断，避免跨执行环境的 Date 无法识别。
+   */
+  function toIso(value) {
+    if (value === undefined || value === null || value === '') return new Date().toISOString();
+    const d = value instanceof Date ? value : new Date(value);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+
+  /**
    * 设置某任务在指定周期内的完成状态。
    * 只保存"已完成"的记录；取消完成即删除对应记录（absence = 未完成），
    * 程序不通过"重置任务"改变状态（docs/04_calculation.md §4.5）。
+   *
+   * periodId 由调用方显式给出，因此可以补录任意历史周期（docs/04_calculation.md §十五）。
+   * completedAt 用于战果归属判定（§4.6）：正常勾选传当前时刻；
+   * 补录历史周期时传一个落在目标归属月内的近似时刻，否则会被算到当前月。
+   * @param {string} templateId
+   * @param {string} periodId
+   * @param {boolean} completed
+   * @param {Date|string} [completedAt]
    */
-  async function setTaskCompleted(templateId, periodId, completed) {
+  async function setTaskCompleted(templateId, periodId, completed, completedAt) {
     const existing = getTaskRecord(templateId, periodId);
 
     if (!completed) {
@@ -335,7 +353,7 @@
       templateId: templateId,
       periodId: periodId,
       completed: true,
-      completedAt: new Date().toISOString()
+      completedAt: toIso(completedAt)
     };
     await persist('taskRecords', next);
     upsert(state.taskRecords, next, 'id');
@@ -426,9 +444,6 @@
       .map(function (s) { return String(s || '').trim(); })
       .filter(Boolean);
 
-    const rewardAtRaw = String((input && input.rewardAt) || '').trim();
-    const rewardAt = /^\d{4}-\d{2}-\d{2}$/.test(rewardAtRaw) ? rewardAtRaw : null;
-
     return {
       month: month,
       finalSenka: finalSenka,
@@ -439,7 +454,6 @@
       rewardLine: rewardLine,
       lineDiff: rewardLine === null ? null : KC.utils.round2(finalSenka - rewardLine),
       rewards: rewards,
-      rewardAt: rewardAt,
       note: String((input && input.note) || '').trim(),
       updatedAt: new Date().toISOString()
     };

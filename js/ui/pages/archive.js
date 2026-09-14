@@ -4,11 +4,14 @@
         docs/06_data_strategy.md §2.2 / §4.2。
 
    职责：
-     · 保存每月最终结果（最终战果、排名、奖励区间、奖励线、奖励装备、奖励时间、备注）
+     · 保存每月最终结果（最终战果、排名、奖励区间、奖励线、奖励装备、备注）
      · 长期查询：列表 + 详情
+     · 人事表：按「归档月份 + 设置中的服务器」自动生成图片地址，不落库
+     · 「计算战果」：按该月原始记录实时算出，作为独立一项与「最终战果」并列展示
    注意：
-     · Archive 仅作结果快照，**不作为统计计算来源**（页面会同时展示实时计算值以便对照）
-     · 月度最终战果以当月末日 21:00 的战果结算为准
+     · Archive 仅作结果快照，**不作为统计计算来源**
+     · 「计算战果」是运行时计算值，**不保存入 Archive**（docs/03_data.md Archive 说明）
+     · 月度最终战果以当月末日 21:00 的战果结算为准，由用户录入，不由计算值填充
    ========================================================================== */
 (function (KC) {
   'use strict';
@@ -42,16 +45,34 @@
     return t ? t.label.split('（')[0] : null;
   }
 
-  function fmtDate(value) {
-    if (!value) return '—';
-    return String(value);
-  }
-
   function fmtDateTime(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '—';
     return U.toDateKey(d) + ' ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes());
+  }
+
+  /**
+   * 「人事表」单元格：地址由 归档月份 + 设置中的服务器编号 自动生成（运行时计算，不落库）。
+   * 未设定服务器时给出提示与跳转入口，避免生成错误链接。
+   */
+  function rankTableHtml(month) {
+    const code = KC.store.getSettings().server;
+    const url = KC.schema.rankImageUrl(month, code);
+
+    if (!url) {
+      return '<span class="muted">未设定服务器</span>' +
+        '<div class="detail-note">在「设置 → 游戏服务器」中选择所在服务器后自动生成。' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-settings">去设置</button>' +
+        '</div>';
+    }
+
+    const name = KC.schema.serverName(code);
+    return '<a class="ext-link" href="' + U.escapeHtml(url) +
+        '" target="_blank" rel="noopener noreferrer">打开人事表图片 ↗</a>' +
+      '<div class="detail-note"><code>' + U.escapeHtml(url) + '</code></div>' +
+      '<div class="detail-note">' + U.escapeHtml(code + ' · ' + (name || '未知服务器')) +
+        ' · 图片由游戏官方服务器提供，点击链接才会访问网络</div>';
   }
 
   /** 按当前原始记录实时计算某月的结算战果（仅用于对照展示） */
@@ -106,9 +127,12 @@
 
     const rows = list.map(function (a) {
       const short = tierShort(a.rewardTier);
+      const live = calcFinalSenka(a.month);
       return '<tr' + (a.month === pageState.selectedMonth ? ' class="row-viewing"' : '') + '>' +
         '<td class="cell-date">' + U.escapeHtml(U.monthLabel(a.month)) + '</td>' +
-        '<td class="cell-num">' + U.formatNumber(a.finalSenka) + '</td>' +
+        '<td class="col-senka">' + U.formatNumber(a.finalSenka) + '</td>' +
+        '<td class="col-senka">' + U.formatNumber(live) +
+          diffHtml(U.round2(live - a.finalSenka)) + '</td>' +
         '<td class="num">' + (a.rank === null ? '<span class="muted">—</span>' : a.rank) + '</td>' +
         '<td>' + (short
           ? U.escapeHtml(short) + (a.rewardFirst ? '<span class="tag tag-first">人事</span>' : '')
@@ -132,11 +156,14 @@
         '<span class="panel-count">共 ' + list.length + ' 个月</span></div>' +
       '<div class="table-wrap"><table class="data-table">' +
         '<thead><tr>' +
-          '<th>月份</th><th class="num">最终战果</th><th class="num">排名</th>' +
+          '<th>月份</th><th class="col-senka">最终战果</th><th class="col-senka">计算战果</th>' +
+          '<th class="num">排名</th>' +
           '<th>奖励区间</th><th class="num">奖励线（差值）</th><th class="actions">操作</th>' +
         '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
       '</table></div>' +
+      '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
+        '不保存入归档；括号内为它与「最终战果」的差值。</p>' +
       '</div>';
   }
 
@@ -174,6 +201,13 @@
 
       '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
         row('最终战果（末日 21:00 结算）', '<span class="cell-num">' + U.formatNumber(a.finalSenka) + '</span>') +
+        row('计算战果（按原始记录实时计算）',
+          '<span class="cell-num">' + U.formatNumber(live) + '</span>' +
+          (Math.abs(drift) < 0.005
+            ? '<span class="muted"> 与最终战果一致</span>'
+            : diffHtml(drift) +
+              '<div class="detail-note">与最终战果相差 ' + (drift > 0 ? '+' : '') +
+              U.formatNumber(drift) + '（' + (drift > 0 ? '最终战果偏低' : '最终战果偏高') + '）</div>')) +
         row('排名', a.rank === null ? '<span class="muted">未记录</span>' : String(a.rank)) +
         row('奖励区间', tier
           ? U.escapeHtml(tier.label) +
@@ -184,18 +218,14 @@
         row('官方对应奖励线', a.rewardLine === null
           ? '<span class="muted">未记录</span>'
           : U.formatNumber(a.rewardLine) + diffHtml(a.lineDiff)) +
-        row('奖励时间', U.escapeHtml(fmtDate(a.rewardAt))) +
+        row('人事表', rankTableHtml(a.month)) +
         row('奖励装备', rewards) +
         row('月度备注', a.note ? U.escapeHtml(a.note) : '<span class="muted">—</span>') +
         row('归档更新于', U.escapeHtml(fmtDateTime(a.updatedAt))) +
       '</tbody></table></div>' +
 
-      '<p class="form-hint">归档仅作结果快照，不参与统计计算。按当前原始记录实时计算，该月结算战果为 ' +
-        U.formatNumber(live) +
-        (Math.abs(drift) < 0.005
-          ? '，与归档值一致。'
-          : '，与归档值相差 ' + (drift > 0 ? '+' : '') + U.formatNumber(drift) +
-            '（' + (drift > 0 ? '归档值偏低' : '归档值偏高') + '）。') +
+      '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
+        '不保存入归档；「最终战果」是记录的末日 21:00 结算值。两者不一致时上方会标出差值。' +
       '</p>' +
       '</div>';
   }
@@ -222,7 +252,6 @@
       rewardFirst: false,
       rewardLine: null,
       rewards: [],
-      rewardAt: null,
       note: ''
     };
 
@@ -244,7 +273,7 @@
         '<div class="form-row">' +
           '<label class="field">' +
             '<span class="field-label">月份</span>' +
-            '<input type="month" name="month" value="' + U.escapeHtml(a.month) + '"' +
+            '<input type="month" name="month" data-act="form-month" value="' + U.escapeHtml(a.month) + '"' +
               (editing ? ' readonly' : '') + ' required>' +
           '</label>' +
           '<label class="field">' +
@@ -252,9 +281,12 @@
             '<input type="number" name="finalSenka" step="0.01" min="0" placeholder="例如 3200.00" value="' +
               U.escapeHtml(a.finalSenka === null ? '' : a.finalSenka) + '" required>' +
           '</label>' +
-          '<div class="form-actions">' +
-            '<button type="button" class="btn btn-ghost" data-act="calc-final">按记录计算</button>' +
-          '</div>' +
+          '<label class="field">' +
+            '<span class="field-label">计算战果</span>' +
+            '<input type="text" id="calc-senka-display" class="calc-readonly" readonly' +
+              ' title="按该月原始记录（继承 / 出击 / EO / 任务）实时计算，不保存入归档"' +
+              ' value="' + U.escapeHtml(U.formatNumber(calcFinalSenka(a.month))) + '">' +
+          '</label>' +
           '<label class="field">' +
             '<span class="field-label">排名（可选）</span>' +
             '<input type="number" name="rank" min="1" step="1" placeholder="例如 42" value="' +
@@ -276,10 +308,6 @@
             '<span class="field-label">官方对应奖励线（可选）</span>' +
             '<input type="number" name="rewardLine" step="0.01" min="0" placeholder="留空 = 未记录" value="' +
               U.escapeHtml(a.rewardLine === null ? '' : a.rewardLine) + '">' +
-          '</label>' +
-          '<label class="field">' +
-            '<span class="field-label">奖励时间（可选）</span>' +
-            '<input type="date" name="rewardAt" value="' + U.escapeHtml(a.rewardAt || '') + '">' +
           '</label>' +
         '</div>' +
 
@@ -323,20 +351,20 @@
 
   /* -------------------------------------------------------------- 交互 */
 
-  async function doCalcFinal() {
+  /**
+   * 「计算战果」随表单所选月份实时更新。
+   * 它按该月原始记录（继承 / 出击 / EO / 任务）算得，只作展示，**不写入 Archive**
+   * （docs/03_data.md Archive 说明、docs/06_data_strategy.md §2.2）。
+   */
+  function refreshCalcSenka() {
     const host = slot('archive-form-slot');
     if (!host) return;
     const monthInput = host.querySelector('input[name="month"]');
-    const finalInput = host.querySelector('input[name="finalSenka"]');
-    if (!monthInput || !finalInput) return;
+    const display = host.querySelector('#calc-senka-display');
+    if (!monthInput || !display) return;
 
     const month = String(monthInput.value || '').trim();
-    if (!/^\d{4}-\d{2}$/.test(month)) {
-      KC.toast('请先选择月份。', 'error');
-      return;
-    }
-    finalInput.value = calcFinalSenka(month);
-    KC.toast('已按当前记录填入结算战果', 'ok');
+    display.value = /^\d{4}-\d{2}$/.test(month) ? U.formatNumber(calcFinalSenka(month)) : '—';
   }
 
   function handleSubmit(e) {
@@ -352,7 +380,6 @@
       rewardTier: fd.get('rewardTier'),
       rewardFirst: fd.get('rewardFirst') === 'on',
       rewardLine: fd.get('rewardLine'),
-      rewardAt: fd.get('rewardAt'),
       rewards: String(fd.get('rewards') || '').split('\n')
         .map(function (s) { return s.trim(); })
         .filter(Boolean),
@@ -430,8 +457,8 @@
       renderDetail();
     } else if (act === 'delete-archive') {
       doDelete(btn.dataset.month);
-    } else if (act === 'calc-final') {
-      doCalcFinal();
+    } else if (act === 'goto-settings') {
+      KC.router.navigate('settings');
     }
   }
 
@@ -439,6 +466,7 @@
     const el = e.target;
     if (!el || !el.dataset) return;
     if (el.dataset.act === 'form-tier') toggleFormConditional(el.value);
+    else if (el.dataset.act === 'form-month') refreshCalcSenka();
   }
 
   /* -------------------------------------------------------------- 生命周期 */
@@ -449,7 +477,7 @@
         '<div>' +
           '<h1>历史归档</h1>' +
           '<p class="page-sub">保存每月最终结果（最终战果、排名、奖励区间与奖励装备），供长期查询。' +
-            '归档仅作快照，不参与统计计算。</p>' +
+            '归档仅作快照，不参与统计计算；「计算战果」由原始记录实时算出，不写入归档。</p>' +
         '</div>' +
         '<button type="button" class="btn btn-primary" data-act="new-archive">+ 新建归档</button>' +
       '</div>' +
