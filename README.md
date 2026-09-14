@@ -173,5 +173,10 @@ git archive HEAD | tar -x -C /tmp/kc-check
 
 ## 许可
 
-项目代码为个人工具，未声明开源许可。
-第三方依赖 `vendor/chart.umd.min.js` 为 Chart.js 4.5.1，MIT License。
+本项目采用 **MIT License**，详见 [`LICENSE`](LICENSE)。
+
+```
+Copyright (c) 2026 Victorique
+```
+
+第三方依赖 [`vendor/chart.umd.min.js`](vendor/chart.umd.min.js) 为 Chart.js 4.5.1，同样以 MIT License 分发。
