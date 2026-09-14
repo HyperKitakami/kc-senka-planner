@@ -1,6 +1,6 @@
 /* ==========================================================================
    calc/analysis.js — 数据分析计算（全部运行时计算，绝不落库、绝不缓存）
-   依据 docs/01_requirements.md §四 / §七、docs/02_ui.md §4.5、docs/04_calculation.md §十三。
+   依据 docs/01_requirements.md §四 / §七、docs/02_ui.md §4.6、docs/04_calculation.md §十三。
    ========================================================================== */
 (function (KC) {
   'use strict';

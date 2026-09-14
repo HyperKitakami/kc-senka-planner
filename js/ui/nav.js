@@ -7,6 +7,7 @@
 
   const NAV_ITEMS = [
     { id: 'dashboard', label: '首页',     icon: '◈' },
+    { id: 'periods',   label: '周期查询', icon: '◷' },
     { id: 'records',   label: '战果记录', icon: '✎' },
     { id: 'planning',  label: '战果规划', icon: '◎' },
     { id: 'tasks',     label: '战果任务', icon: '☰' },

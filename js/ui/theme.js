@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/theme.js — 外观主题
-   依据 docs/02_ui.md §4.8、docs/03_data.md Settings（外观设置）。
+   依据 docs/02_ui.md §4.9、docs/03_data.md Settings（外观设置）。
 
    实现方式：只在 <html> 上切换 data-theme，具体配色全部由 css/style.css
    的 CSS 变量覆盖完成——所以图表颜色（运行时读 CSS 变量）也会自动跟随。

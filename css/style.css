@@ -21,6 +21,13 @@
   --primary: #2f6fed;
   --primary-dark: #2258c9;
   --primary-soft: #eaf1fe;
+  /* 主色实底上的文字色（浅色 / 深色主题都用白字，故两处取值相同） */
+  --primary-contrast: #ffffff;
+
+  /* 首页卡片网格：列跨度由 JS 写进 --dash-cols，最小列宽须与
+     js/ui/components.js 的 GRID_MIN_COL 保持一致，否则列数与跨度会互相矛盾 */
+  --dash-gap: 14px;
+  --dash-min: 204px;
 
   /* 语义色 */
   --gold: #b98420;
@@ -81,6 +88,7 @@
   --primary: #4c86f0;
   --primary-dark: #82adf8;
   --primary-soft: #1d2b42;
+  --primary-contrast: #ffffff;
 
   --gold: #d9a445;
   --gold-soft: #2b2415;
@@ -296,12 +304,124 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
    卡片 / 统计
    -------------------------------------------------------------------------- */
 
+/**
+ * 首页卡片网格（docs/02_ui.md §五）。
+ * 统计卡与面板卡共用同一个网格，靠 grid-column 跨度区分大小，
+ * 所以「拖到哪就是哪」——不必再把面板钉在整行。
+ * 列数由 JS 按可用宽度写入 --dash-cols（CSS 的 auto-fit 无法表达跨列）。
+ */
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(var(--dash-cols, 4), minmax(0, 1fr));
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  align-items: stretch;
+  gap: var(--dash-gap, 14px);
   margin-bottom: 18px;
 }
+
+/* 网格项：面板卡自带背景，统计卡交给内部的 .stat-card */
+.dash-card { position: relative; min-width: 0; }
+.dash-card > .card-body { min-width: 0; }
+.dash-card > .card-body > .panel,
+.dash-card > .card-body > .stat-card { height: 100%; margin-bottom: 0; }
+
+/* 尺寸控件只在编辑模式出现，平时首页保持纯展示 */
+.card-tools { display: none; }
+
+.dash-card.is-editing {
+  padding: 14px 16px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  /* 编辑模式下整张卡是拖动把手，别让拖拽顺手选中卡片里的文字 */
+  user-select: none;
+}
+
+/* 卡片内容自带的边框在编辑态里与外框重复，统一去掉一层 */
+.dash-card.is-editing .panel,
+.dash-card.is-editing .stat-card {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.dash-card.is-editing .card-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dash-card.is-editing:hover { border-color: var(--primary); }
+.dash-card.is-editing[draggable="true"] { cursor: grab; }
+.dash-card.is-editing[draggable="true"]:active { cursor: grabbing; }
+
+/* 拖动中的卡片：留在原位当"占位"，内容压暗 */
+.dash-card.is-dragging {
+  opacity: .35;
+  border-style: solid;
+  border-color: var(--border-strong);
+}
+
+/*
+ * 松手落点提示：用与编辑态同一套虚线框画在被顶开的那张卡上，
+ * 所以"虚线框出现在哪，卡片就会落在哪"。
+ * 选择器要压过 .dash-card.is-editing 的边框声明，故写成 .is-editing.is-drop-target。
+ */
+.dash-card.is-editing.is-drop-target {
+  border: 2px dashed var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 自定义拖动影像：只是给浏览器取一张和卡片等宽的图，用完即弃 */
+.drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  height: 36px;
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  pointer-events: none;
+}
+
+.card-drag {
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+  user-select: none;
+}
+
+.card-sizes, .size-group { display: inline-flex; gap: 4px; }
+.btn-icon.btn-xs.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast);
+}
+
+/* 首页布局工具条 */
+.dash-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 12px;
+}
+
+.dash-bar.is-editing {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.dash-edit-hint { font-size: 12.5px; color: var(--text-muted); }
+.dash-edit-hint strong { color: var(--text); }
+.dash-edit-actions { display: flex; gap: 8px; }
 
 .stat-card {
   background: var(--panel);
@@ -606,7 +726,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   line-height: 1.3;
 }
 
-/* 日课 / 周课的期次选择（补录历史周期用）：紧凑版下拉，放在表格行内 */
+/* 日常 / 周常的期次选择（补录历史周期用）：紧凑版下拉，放在表格行内 */
 .period-pick {
   height: 26px;
   max-width: 150px;
@@ -735,15 +855,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
    -------------------------------------------------------------------------- */
 
 .head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-.dash-split {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 18px;
-  align-items: start;
-}
-
-.dash-split > .panel { margin-bottom: 0; }
 
 /* 趋势折线图（等比缩放，带横纵坐标；配色全部走变量） */
 
@@ -1163,6 +1274,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .card-order-actions { display: flex; gap: 6px; }
 
+/* 尺寸按钮与上下移分开一点，避免误点 */
+.card-order-row .size-group { margin-right: 10px; }
+.card-order-row.is-off .size-group { pointer-events: none; }
+
 .btn-xs {
   width: 26px; height: 26px;
   padding: 0;
@@ -1295,6 +1410,79 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* --------------------------------------------------------------------------
+   周期查询页
+   -------------------------------------------------------------------------- */
+
+.period-table td { vertical-align: top; }
+
+/* 归属月已切到次月的那一行（末日 13:00 ～ 21:00 窗口内的任务战果） */
+.data-table tbody tr.is-next td { background: var(--gold-soft); }
+
+.period-flag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  /* 与 .tag-today / .tag-first 同款徽标样式 */
+  background: var(--gold);
+  color: #fff;
+  font-size: 11px;
+}
+
+.period-span { white-space: nowrap; }
+
+.period-remain { font-weight: 600; margin-bottom: 6px; white-space: nowrap; }
+
+/* 区间走过多少：一条细轨，填充部分用主题色 */
+.period-rail {
+  display: block;
+  width: 118px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--senka-remaining);
+  overflow: hidden;
+}
+
+.period-rail-fill {
+  display: block;
+  height: 100%;
+  background: var(--senka-planned);
+  transition: width .25s ease;
+}
+
+.period-notes {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.period-notes strong { color: var(--text); }
+
+.period-extra {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.period-extra-label {
+  font-weight: 600;
+  color: var(--text);
+}
 
 /* --------------------------------------------------------------------------
    响应式

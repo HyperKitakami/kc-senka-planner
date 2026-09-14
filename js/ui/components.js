@@ -83,20 +83,108 @@
 
   /**
    * 首页卡片注册表（docs/02_ui.md §4.1 / §五）。
-   * 首页按此顺序渲染；设置页据此提供显示/隐藏与排序。
+   * 首页按此顺序渲染；设置页据此提供显示/隐藏、排序与尺寸。
    * 新增卡片只需在此追加一项，并同步 Settings.dashboardOrder 的默认值。
+   *
+   * kind：stat = 指标小卡（落在 .card-grid 网格里）；panel = 面板型卡片（自带
+   *       标题栏与图表，默认整行）。两类都可排序、可调尺寸——这正是把它们放进
+   *       同一注册表的原因：顺序与尺寸只依赖 id，与卡片长什么样无关。
    */
   const DASHBOARD_CARDS = [
-    { id: 'currentSenka',     label: '当前实际战果' },
-    { id: 'target',           label: '月目标' },
-    { id: 'remainingTarget',  label: '剩余目标' },
-    { id: 'monthEndForecast', label: '预计月底战果' },
-    { id: 'todayGrowth',      label: '今日增长' },
-    { id: 'naturalDaily',     label: '当前自然日均' },
-    { id: 'requiredDaily',    label: '所需日均' },
-    { id: 'remainingPeriod',  label: '周期剩余' },
-    { id: 'calendar',         label: '战果日历（整行）' }
+    { id: 'currentSenka',     label: '当前实际战果', kind: 'stat' },
+    { id: 'target',           label: '月目标',       kind: 'stat' },
+    { id: 'remainingTarget',  label: '剩余目标',     kind: 'stat' },
+    { id: 'monthEndForecast', label: '预计月底战果', kind: 'stat' },
+    { id: 'todayGrowth',      label: '今日增长',     kind: 'stat' },
+    { id: 'naturalDaily',     label: '当前自然日均', kind: 'stat' },
+    { id: 'requiredDaily',    label: '所需日均',     kind: 'stat' },
+    { id: 'remainingPeriod',  label: '周期剩余',     kind: 'stat' },
+    { id: 'calendar',         label: '战果日历',     kind: 'panel' },
+    { id: 'trend',            label: '最近增长趋势', kind: 'panel' },
+    { id: 'recentSummary',    label: '最近数据摘要', kind: 'panel' }
   ];
+
+  const KNOWN_CARD_IDS = DASHBOARD_CARDS.map(function (c) { return c.id; });
+
+  /** 卡片尺寸档位（数值即网格列跨度，经列数夹取后生效） */
+  const CARD_SIZES = [
+    { key: 'sm', label: '小', span: 1 },
+    { key: 'md', label: '中', span: 2 },
+    { key: 'lg', label: '大', span: 3 }
+  ];
+  const DEFAULT_SIZE = 'md';
+  const SIZE_KEYS = CARD_SIZES.map(function (s) { return s.key; });
+
+  /** 网格列数上下限与单列最小宽度（与 css 的 --dash-min / --dash-gap 保持一致） */
+  const GRID_MIN_COL = 204;
+  const GRID_GAP = 14;
+  const GRID_MIN_COLS = 1;
+  const GRID_MAX_COLS = 4;
+
+  /**
+   * 按可用宽度算网格列数。
+   * 与 CSS 的 `.card-grid { grid-template-columns: repeat(var(--dash-cols), 1fr) }`
+   * 配套：列数由 JS 决定并写进 --dash-cols，卡片列跨度才可预测
+   * （旧的 auto-fit 无法表达"跨 2 列"，窄屏会直接溢出）。
+   * 用 floor 而不是 round —— 宁可少一列，也不能让卡片被压到最小宽度以下。
+   */
+  function gridColCount(width) {
+    const w = Number(width);
+    if (!(w > 0)) return GRID_MAX_COLS;
+    const n = Math.floor((w + GRID_GAP) / (GRID_MIN_COL + GRID_GAP));
+    return Math.max(GRID_MIN_COLS, Math.min(GRID_MAX_COLS, n));
+  }
+
+  /** 卡片尺寸键 → 实际列跨度（不会超过当前列数） */
+  function cardSpan(sizeKey, cols) {
+    const hit = CARD_SIZES.filter(function (s) { return s.key === sizeKey; })[0];
+    const span = hit ? hit.span : 2;
+    return Math.max(1, Math.min(cols || GRID_MAX_COLS, span));
+  }
+
+  function isKnownCard(id) { return KNOWN_CARD_IDS.indexOf(id) >= 0; }
+
+  function cardSizeLabel(sizeKey) {
+    const hit = CARD_SIZES.filter(function (s) { return s.key === sizeKey; })[0];
+    return hit ? hit.label : '中';
+  }
+
+  /** 校验后的尺寸配置：未知键丢弃、非法值落回默认 */
+  function sanitizeSizes(map) {
+    const out = {};
+    if (!map || typeof map !== 'object') return out;
+    KNOWN_CARD_IDS.forEach(function (id) {
+      if (SIZE_KEYS.indexOf(map[id]) >= 0) out[id] = map[id];
+    });
+    return out;
+  }
+
+  /** 全部卡片的尺寸（已知卡片一律有值，未配置即默认） */
+  function defaultSizes() {
+    const out = {};
+    KNOWN_CARD_IDS.forEach(function (id) { out[id] = DEFAULT_SIZE; });
+    return out;
+  }
+
+  function normalizeCardOrder(settings) {
+    const stored = (settings && settings.dashboardOrder) || [];
+    const order = stored.filter(isKnownCard);
+    KNOWN_CARD_IDS.forEach(function (id) { if (order.indexOf(id) < 0) order.push(id); });
+    return order;
+  }
+
+  function normalizeCardHidden(settings) {
+    return ((settings && settings.dashboardHidden) || []).filter(isKnownCard);
+  }
+
+  function normalizeCardSizes(settings) {
+    const stored = sanitizeSizes(settings && settings.dashboardSizes);
+    const out = defaultSizes();
+    KNOWN_CARD_IDS.forEach(function (id) {
+      if (stored[id]) out[id] = stored[id];   // 缺失的卡片自动落回默认尺寸
+    });
+    return out;
+  }
 
   /**
    * 首页实际要渲染的卡片 id（已按顺序排列并剔除隐藏项）。
@@ -104,15 +192,10 @@
    * 这样升级后新增的卡片不会因为旧配置而消失。
    */
   function visibleDashboardCards(settings) {
-    const known = DASHBOARD_CARDS.map(function (c) { return c.id; });
-    const stored = (settings && settings.dashboardOrder) || [];
-    const order = stored.filter(function (id) { return known.indexOf(id) >= 0; });
-    known.forEach(function (id) { if (order.indexOf(id) < 0) order.push(id); });
-
-    const hidden = ((settings && settings.dashboardHidden) || []).filter(function (id) {
-      return known.indexOf(id) >= 0;
+    const hidden = normalizeCardHidden(settings);
+    return normalizeCardOrder(settings).filter(function (id) {
+      return hidden.indexOf(id) < 0;
     });
-    return order.filter(function (id) { return hidden.indexOf(id) < 0; });
   }
 
   KC.ui = {
@@ -121,6 +204,19 @@
     taskCutoffNotice: taskCutoffNotice,
     remainText: remainText,
     DASHBOARD_CARDS: DASHBOARD_CARDS,
-    visibleDashboardCards: visibleDashboardCards
+    visibleDashboardCards: visibleDashboardCards,
+    /* 首页布局（排序 + 尺寸）共用逻辑，设置页与首页都从这里取 */
+    CARD_SIZES: CARD_SIZES,
+    DEFAULT_CARD_SIZE: DEFAULT_SIZE,
+    GRID_GAP: GRID_GAP,
+    gridColCount: gridColCount,
+    cardSpan: cardSpan,
+    cardSizeLabel: cardSizeLabel,
+    isKnownCard: isKnownCard,
+    defaultCardSizes: defaultSizes,
+    sanitizeCardSizes: sanitizeSizes,
+    normalizeCardOrder: normalizeCardOrder,
+    normalizeCardHidden: normalizeCardHidden,
+    normalizeCardSizes: normalizeCardSizes
   };
 })(window.KC = window.KC || {});

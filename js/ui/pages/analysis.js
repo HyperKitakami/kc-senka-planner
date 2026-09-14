@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/pages/analysis.js — 数据分析页
-   依据 docs/02_ui.md §4.5 / §六、docs/01_requirements.md §四 / §七、
+   依据 docs/02_ui.md §4.6 / §六、docs/01_requirements.md §四 / §七、
         docs/04_calculation.md §十三。
 
    定位：只做分析与展示，不承担任何数据编辑。

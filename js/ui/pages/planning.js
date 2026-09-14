@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/pages/planning.js — 战果规划页
-   依据 docs/02_ui.md §4.3、docs/01_requirements.md §二、docs/04_calculation.md §六~§十三。
+   依据 docs/02_ui.md §4.4、docs/01_requirements.md §二、docs/04_calculation.md §六~§十三。
 
    职责：
      · 目标设定（继承战果 / 月目标 / 月备注）

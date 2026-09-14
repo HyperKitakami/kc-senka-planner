@@ -7,6 +7,15 @@
      · 概览级图表：目标进度（三段进度条）+ 最近增长趋势（迷你折线）
      · 仅提供少量快捷操作，复杂编辑跳转到对应页面
    所有数字均运行时计算，不写入数据库。
+
+   布局（docs/02_ui.md §五「显示或隐藏卡片、调整卡片顺序、卡片大小」）：
+     · 顺序与尺寸来自 Settings.dashboardOrder / dashboardSizes，运行时自愈；
+     · 首页**必须进入「编辑布局」模式**才能拖动排序或改尺寸，平时卡片是纯展示的，
+       避免误触与拖拽与卡片内点击的冲突；
+     · 统计卡与面板卡处在同一个网格里（单网格 + 列跨度），因此面板卡也能排序与缩放；
+       窄屏下列数不足时，跨度自动夹取到 1 列，不会溢出错行。
+
+   编辑模式属于临时 UI 状态（pageState），不写入数据库；unmount 时自然丢弃。
    ========================================================================== */
 (function (KC) {
   'use strict';
@@ -19,7 +28,7 @@
   const SUMMARY_DAYS = 7;
   const RECENT_LIST = 5;
 
-  const pageState = { container: null };
+  const pageState = { container: null, editing: false, dragId: null };
 
   let unsubscribe = null;
   let handlers = null;
@@ -28,11 +37,100 @@
     return U.toDateKey(d) + ' ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes());
   }
 
+  function currentSettings() { return KC.store.getSettings(); }
+
+  /* -------------------------------------------------------------- 布局 */
+
+  function dashEl() { return KC.dom.qs('#dash-cards', pageState.container); }
+
+  /** 已渲染卡片：id -> 元素 */
+  function cardElements() {
+    const cards = {};
+    KC.dom.qsa('[data-card-id]', pageState.container).forEach(function (el) {
+      cards[el.dataset.cardId] = el;
+    });
+    return cards;
+  }
+
+  /**
+   * 测量并写入网格列数（--dash-cols）。
+   * 列数必须由 JS 决定：CSS 的 auto-fit 无法表达「跨 N 列」，窄屏会溢出错行。
+   */
+  function measureCols() {
+    const host = pageState.container;
+    const grid = dashEl();
+    const cols = KC.ui.gridColCount(grid ? grid.clientWidth : host.clientWidth);
+    if (grid) grid.style.setProperty('--dash-cols', String(cols));
+    return cols;
+  }
+
+  /**
+   * 把当前尺寸配置落到卡片上（跨度 + 是否占满整行）。
+   * 所有布局路径都走这里：首次渲染、改尺寸、窗口缩放，保证三者一致。
+   */
+  function applyCardLayout(sizes) {
+    if (!pageState.container || !dashEl()) return;
+    const cols = measureCols();
+    const cards = cardElements();
+    Object.keys(cards).forEach(function (id) {
+      const el = cards[id];
+      const span = KC.ui.cardSpan(sizes[id], cols);
+      el.style.gridColumn = 'span ' + span;
+      el.classList.toggle('is-full', span === cols && cols > 1);
+    });
+  }
+
+  /**
+   * 按最新的顺序 / 尺寸重排已有 DOM，不重建内容（避免重绘闪烁与丢焦点）。
+   * 目前只有设置页改顺序会走到这里；首页拖拽直接用 DOM 顺序。
+   */
+  function applyLayout(sizes) {
+    const grid = dashEl();
+    if (!grid) return;
+    const cards = cardElements();
+
+    KC.ui.normalizeCardOrder(currentSettings()).forEach(function (id) {
+      if (cards[id]) grid.appendChild(cards[id]);   // appendChild 移动节点 = 按新顺序重排
+    });
+    applyCardLayout(sizes);
+  }
+
   /* -------------------------------------------------------------- 卡片 */
+
+  function sizeControl(id, sizeKey, label) {
+    if (!pageState.editing) return '';
+    const buttons = KC.ui.CARD_SIZES.map(function (s) {
+      return '<button type="button" class="btn btn-icon btn-xs' +
+        (s.key === sizeKey ? ' active' : '') + '" data-act="set-card-size" data-id="' +
+        U.escapeHtml(id) + '" data-size="' + s.key + '" title="' +
+        U.escapeHtml('设为' + s.label + '号') + '" aria-label="' +
+        U.escapeHtml(label + '设为' + s.label + '号') +
+        '" aria-pressed="' + (s.key === sizeKey ? 'true' : 'false') + '">' +
+        U.escapeHtml(s.label) + '</button>';
+    }).join('');
+    return '<span class="card-tools">' +
+      '<span class="card-drag" title="按住拖动排序" aria-hidden="true">⠿</span>' +
+      '<span class="card-sizes" role="group" aria-label="' + U.escapeHtml(label + '尺寸') + '">' +
+        buttons +
+      '</span>' +
+      '</span>';
+  }
+
+  /**
+   * 卡片外壳的开始标签：带排序 / 尺寸所需的数据属性与编辑态控件。
+   * kind 用来区分统计卡与面板卡，方便样式与调试；data-card-id 是拖拽落库的依据。
+   */
+  function cardOpen(id, label, kind, info) {
+    const sizeKey = info.sizes[id] || KC.ui.DEFAULT_CARD_SIZE;
+    return '<div class="dash-card is-' + kind + (pageState.editing ? ' is-editing' : '') + '"' +
+      ' data-card-id="' + U.escapeHtml(id) + '"' +
+      (pageState.editing ? ' draggable="true"' : '') + '>' +
+      sizeControl(id, sizeKey, label);
+  }
 
   /**
    * 网格型卡片（stat-card）注册表：id -> HTML。
-   * 面板型卡片（整行）由 buildPanelRenderers 提供。
+   * 面板型卡片由 buildPanelRenderers 提供。
    */
   function gridCards(plan, ctx) {
     const tRec = ctx.todayRecord;
@@ -125,48 +223,7 @@
       '</div>';
   }
 
-  /** 面板型卡片（独占整行）：id -> 渲染函数 */
-  function buildPanelRenderers(cal) {
-    return {
-      calendar: function () { return calendarPanel(cal); }
-    };
-  }
-
-  /**
-   * 按设置中的顺序渲染全部首页卡片。
-   * 连续的网格卡片合并进一个 .card-grid；面板型卡片独占整行，
-   * 因此用户把面板卡片拖到中间也不会破坏网格布局。
-   */
-  function cardsBlock(plan, ctx, cal) {
-    const grid = gridCards(plan, ctx);
-    const panels = buildPanelRenderers(cal);
-    const blocks = [];
-    let buffer = [];
-
-    function flush() {
-      if (!buffer.length) return;
-      blocks.push('<div class="card-grid">' + buffer.join('') + '</div>');
-      buffer = [];
-    }
-
-    KC.ui.visibleDashboardCards(KC.store.getSettings()).forEach(function (id) {
-      if (panels[id]) {
-        flush();
-        blocks.push(panels[id]());
-      } else if (grid[id]) {
-        buffer.push(grid[id]);
-      }
-    });
-    flush();
-
-    if (!blocks.length) {
-      return '<div class="panel"><div class="empty-inline">' +
-        '首页卡片已全部隐藏，可在「设置」中重新开启。</div></div>';
-    }
-    return blocks.join('');
-  }
-
-  /* -------------------------------------------------------------- 图表 */
+  /* -------------------------------------------------------- 图表 */
 
   /* 趋势图坐标系（用户单位）。等比缩放，文字不会被拉伸。 */
   const TREND_W = 640;
@@ -302,6 +359,309 @@
       '</div>';
   }
 
+  /** 面板型卡片渲染器：id -> 渲染函数 */
+  function buildPanelRenderers(cal, recent14, recent7) {
+    return {
+      calendar: function () { return calendarPanel(cal); },
+      trend: function () { return trendPanel(recent14); },
+      recentSummary: function () { return summaryPanel(recent7); }
+    };
+  }
+
+  /**
+   * 按设置中的顺序渲染全部首页卡片。
+   *
+   * 统计卡与面板卡都长成同一个网格项（.card-grid 的直接子元素），
+   * 因此用户可以把面板卡拖到任意位置、也能让统计卡和面板卡并排换行。
+   * 实际列跨度由 applyCardLayout 在插入 DOM 后写入，渲染阶段只负责内容与数据属性。
+   */
+  function cardsBlock(plan, ctx, cal, recent14, recent7, info) {
+    const grid = gridCards(plan, ctx);
+    const panels = buildPanelRenderers(cal, recent14, recent7);
+    const settings = currentSettings();
+
+    const items = KC.ui.visibleDashboardCards(settings).map(function (id) {
+      const card = KC.ui.DASHBOARD_CARDS.filter(function (c) { return c.id === id; })[0];
+      const label = card ? card.label : id;
+      const kind = card ? card.kind : 'stat';
+      const body = kind === 'panel' ? panels[id]() : grid[id];
+      if (!body) return '';
+      return cardOpen(id, label, kind, info) +
+        '<div class="card-body">' + body + '</div>' +
+        '</div>';
+    }).filter(Boolean);
+
+    return '<div id="dash-toolbar">' + toolbarHtml() + '</div>' +
+      (items.length
+        ? '<div class="card-grid" id="dash-cards">' + items.join('') + '</div>'
+        : '<div class="panel"><div class="empty-inline">' +
+          '首页卡片已全部隐藏，可在「设置」中重新开启。</div></div>');
+  }
+
+  /* ---------------------------------------------------------- 编辑模式 */
+
+  /**
+   * 编辑模式工具条的 HTML。
+   * 只有进入编辑模式后卡片才可拖动与改尺寸，平时首页保持纯展示，避免误触。
+   */
+  function toolbarHtml() {
+    if (!pageState.editing) {
+      return '<div class="dash-bar">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="dash-edit">编辑布局</button>' +
+        '</div>';
+    }
+    const cols = (dashEl() && measureCols()) || 0;
+    return '<div class="dash-bar is-editing">' +
+      '<span class="dash-edit-hint">拖动卡片调整顺序；用卡片右上角的' +
+        '<strong>小 / 中 / 大</strong>改尺寸' +
+        (cols > 1 ? '（当前 ' + cols + ' 列，大号占满整行）' : '') + '。</span>' +
+      '<span class="dash-edit-actions">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="dash-reset">恢复默认布局</button>' +
+        '<button type="button" class="btn btn-primary btn-sm" data-act="dash-done">完成</button>' +
+      '</span>' +
+      '</div>';
+  }
+
+  /** 重建工具条（切换编辑模式时调用；列数等文案随重新渲染刷新） */
+  function buildToolbar() {
+    const host = pageState.container;
+    const bar = KC.dom.qs('#dash-toolbar', host);
+    if (bar) bar.innerHTML = toolbarHtml();
+  }
+
+  /**
+   * 改尺寸：写库 + 立即刷新跨度。
+   * 不重绘，所以顺手把该卡片的按钮选中态也更新掉（用户可能连点几档）。
+   */
+  async function setCardSize(id, sizeKey) {
+    if (!pageState.editing) return;
+    const next = KC.ui.normalizeCardSizes(currentSettings());
+    next[id] = sizeKey;
+    try {
+      await KC.store.saveSettings({ dashboardSizes: next });
+    } catch (err) {
+      KC.toast('保存尺寸失败：' + err.message, 'error');
+      return;
+    }
+    // 拖拽与改尺寸都不整页重建：重建会清空 DOM、打断交互，图表也会闪。
+    applyCardLayout(next);
+    syncSizeButtons(id, sizeKey);
+  }
+
+  /** 把某张卡片的尺寸按钮选中态对齐到当前值 */
+  function syncSizeButtons(id, sizeKey) {
+    KC.dom.qsa('[data-act="set-card-size"][data-id="' + id + '"]', pageState.container)
+      .forEach(function (btn) {
+        const on = btn.dataset.size === sizeKey;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+  }
+
+  async function resetLayout() {
+    const ok = await KC.confirmDialog({
+      title: '恢复默认布局',
+      message: '将首页卡片的顺序与尺寸恢复为默认，卡片本身的显示 / 隐藏状态保留。确定继续吗？',
+      okText: '恢复'
+    });
+    if (!ok) return;
+    try {
+      await KC.store.saveSettings({
+        dashboardOrder: KC.ui.DASHBOARD_CARDS.map(function (c) { return c.id; }),
+        dashboardSizes: {}
+      });
+      KC.toast('已恢复默认布局');
+    } catch (err) {
+      KC.toast('恢复失败：' + err.message, 'error');
+    }
+  }
+
+  /* ---------------------------------------------------------- 拖拽排序 */
+
+  /**
+   * 指针落在哪个插入位（0 ～ 除拖动卡外的卡片数）。
+   * 按行优先数「几何上排在指针前面的卡片数」：
+   *   · 中心明显在上方 → 前面的（+1）
+   *   · 同一行且中心在指针左边 → 前面的（+1）
+   *   · 其余（同行的右侧、下方的行）→ 不在前面，停止
+   * 关键点：只参考**其它卡片**的位置，拖动中的卡片自身位置变化不影响结果，
+   * 否则边拖边算会自相矛盾（卡片会被反复送回顶部）。
+   */
+  function dragInsertionIndex(grid, x, y) {
+    const items = KC.dom.qsa('[data-card-id]', grid).filter(function (el) {
+      return el.dataset.dragSource !== '1';
+    }).map(function (el) {
+      const box = el.getBoundingClientRect();
+      return { el: el, top: box.top, height: box.height, centerX: box.left + box.width / 2 };
+    }).sort(function (a, b) { return a.top - b.top; });
+
+    if (!items.length) return 0;
+
+    let index = 0;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      // 行的判定阈值取卡片高度的一半：卡片高度已知，比固定像素更可靠
+      const rowTolerance = Math.max(12, it.height / 2);
+      if (y > it.top + rowTolerance) { index = i + 1; continue; }
+      if (y >= it.top - rowTolerance && x > it.centerX) { index = i + 1; continue; }
+      break;
+    }
+    return index;
+  }
+
+  /** 把拖动卡移到目标插入位 */
+  function applyDragOrder(grid, dragged, index) {
+    const others = KC.dom.qsa('[data-card-id]', grid).filter(function (el) { return el !== dragged; });
+    const clamped = Math.max(0, Math.min(index, others.length));
+    if (clamped >= others.length) grid.appendChild(dragged);
+    else grid.insertBefore(dragged, others[clamped]);
+  }
+
+  /**
+   * 进入拖动：给拖动卡打标记（后续据此把它排除在插入位计算外），
+   * 并让拖动影像与卡片当前的实际宽度一致——默认影像是拖动瞬间的快照，
+   * 尺寸大改过之后会看到一块宽窄不对的虚影。
+   */
+  function onDragStart(e) {
+    if (!pageState.editing) return;
+    const card = KC.dom.closestFrom(e.target, '[data-card-id]');
+    if (!card) return;
+
+    // 上一次拖动若异常中断（dragend 没来），标记可能还留在卡片上，
+    // 会让这张卡在插入位计算里被误判成"拖动卡"。这里先兜底清一遍。
+    if (pageState.dragId) clearDragMarks(pageState.container);
+
+    pageState.dragId = card.dataset.cardId;
+    card.dataset.dragSource = '1';
+    card.classList.add('is-dragging');
+    clearDropHint();
+
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', pageState.dragId); } catch (err) { /* 兼容旧浏览器 */ }
+      const box = card.getBoundingClientRect();
+      if (box.width > 0 && typeof document.createElement === 'function') {
+        const ghost = document.createElement('div');
+        ghost.className = 'drag-ghost';
+        ghost.style.width = Math.round(box.width) + 'px';
+        ghost.textContent = card.dataset.cardId || '';
+        document.body.appendChild(ghost);
+        try { e.dataTransfer.setDragImage(ghost, 20, 18); } catch (err) { /* 忽略 */ }
+        setTimeout(function () { ghost.remove(); }, 0);
+      }
+    }
+  }
+
+  function clearDropHint() {
+    KC.dom.qsa('.is-drop-target', pageState.container).forEach(function (el) {
+      el.classList.remove('is-drop-target');
+    });
+  }
+
+  function onDragOver(e) {
+    if (!pageState.editing || !pageState.dragId) return;
+    const grid = dashEl();
+    if (!grid || !grid.contains(e.target)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    const dragged = grid.querySelector('[data-card-id="' + pageState.dragId + '"]');
+    if (!dragged) return;
+
+    const index = dragInsertionIndex(grid, e.clientX, e.clientY);
+    applyDragOrder(grid, dragged, index);
+
+    // 虚线提示：高亮「松手后会被顶开的那张卡」，末尾则续在拖动卡自己身上
+    clearDropHint();
+    const others = KC.dom.qsa('[data-card-id]', grid).filter(function (el) { return el !== dragged; });
+    const clamped = Math.max(0, Math.min(index, others.length));
+    const hintOn = clamped < others.length ? others[clamped] : dragged;
+    if (hintOn) hintOn.classList.add('is-drop-target');
+  }
+
+  function onDrop(e) {
+    if (!pageState.editing || !pageState.dragId) return;
+    e.preventDefault();
+  }
+
+  /**
+   * 拖动结束：先做**同步**清理（摘标记、清虚线），再异步落库。
+   * 顺序很重要——清理若排在 await 之后，一旦落库抛错，标记就会留在卡片上，
+   * 下次拖动时这张卡会被误判为"正在拖动"而错开落点。
+   */
+  async function onDragEnd() {
+    const id = pageState.dragId;
+    pageState.dragId = null;
+
+    // 无论 dragId 是否在，都先清干净：拖出窗口等异常情况下留下的
+    // is-dragging / is-drop-target 会让卡片一直保持压暗或虚线的假状态。
+    clearDragMarks(pageState.container);
+    clearDropHint();
+    if (!id) return;
+
+    const grid = dashEl();
+    if (!grid) return;
+
+    const order = KC.dom.qsa('[data-card-id]', grid).map(function (el) {
+      return el.dataset.cardId;
+    });
+    const current = KC.ui.normalizeCardOrder(currentSettings());
+    let changed = false;
+    for (let i = 0; i < order.length; i++) {
+      if (order[i] !== current[i]) { changed = true; break; }
+    }
+    if (!changed) return;
+
+    try {
+      // 持久化后不重建：DOM 里的顺序已经是用户要的，重建反而会闪一下。
+      await KC.store.saveSettings({ dashboardOrder: order });
+      applyLayout(KC.ui.normalizeCardSizes(currentSettings()));
+    } catch (err) {
+      KC.toast('保存顺序失败：' + err.message, 'error');
+    }
+  }
+
+  /** 清掉拖动相关的全部临时标记 */
+  function clearDragMarks(host) {
+    KC.dom.qsa('.is-dragging', host).forEach(function (el) {
+      el.classList.remove('is-dragging');
+    });
+    KC.dom.qsa('[data-card-id]', host).forEach(function (el) {
+      delete el.dataset.dragSource;
+    });
+  }
+
+  function onWinResize() {
+    if (!pageState.container || !dashEl()) return;
+    applyCardLayout(KC.ui.normalizeCardSizes(currentSettings()));
+  }
+
+  /**
+   * 切到编辑模式：卡片变可拖动，并出现拖拽柄与尺寸控件。
+   * 尺寸控件是卡片 HTML 的一部分（见 sizeControl），所以这里必须重绘一次；
+   * 拖拽过程本身不会重绘（那会清空 DOM 并打断拖动），落库也只在 dragend 发生。
+   */
+  function enterEdit() {
+    pageState.editing = true;
+    render();                       // render 末尾会刷新工具条
+    KC.toast('已进入编辑布局：拖动卡片排序，右上角改尺寸');
+  }
+
+  /**
+   * 退出编辑模式：只摘掉编辑态，不重绘——尺寸控件由 CSS（.card-tools）隐藏，
+   * 没必要为了隐藏几个按钮重建整页图表。
+   */
+  function exitEdit() {
+    pageState.editing = false;
+    pageState.dragId = null;
+    const host = pageState.container;
+    host.classList.remove('is-dash-editing');
+    KC.dom.qsa('[data-card-id]', host).forEach(function (el) {
+      el.classList.remove('is-editing', 'is-dragging');
+      el.removeAttribute('draggable');
+    });
+    buildToolbar();
+  }
   /* -------------------------------------------------------------- 渲染 */
 
   function render() {
@@ -324,6 +684,12 @@
     const recent7 = KC.calc.stats.recentSummary(records, SUMMARY_DAYS, now);
     // 日历跟随首页的规划月份（战果归属月），与其它卡片口径一致
     const calendar = KC.calc.stats.monthCalendar(records, month, now);
+
+    const settings = currentSettings();
+    const sizes = KC.ui.normalizeCardSizes(settings);
+    const info = { sizes: sizes, cols: 0, editing: pageState.editing, span: 0 };
+
+    host.classList.toggle('is-dash-editing', pageState.editing);
 
     host.innerHTML =
       '<div class="page-head">' +
@@ -353,11 +719,11 @@
         KC.ui.senkaProgress(plan) +
       '</div>' +
 
-      cardsBlock(plan, ctx, calendar) +
-      '<div class="dash-split">' +
-        trendPanel(recent14) +
-        summaryPanel(recent7) +
-      '</div>';
+      cardsBlock(plan, ctx, calendar, recent14, recent7, info);
+
+    applyCardLayout(sizes);
+    // 工具条文案含列数，且卡片列数就绪后才知道要提示几列，所以放在最后刷新
+    buildToolbar();
   }
 
   /* -------------------------------------------------------------- 交互 */
@@ -366,6 +732,13 @@
     const btn = KC.dom.closestFrom(e.target, '[data-act]');
     if (!btn) return;
     const act = btn.dataset.act;
+
+    // 编辑模式下的控件优先；其余快捷操作在两种模式下都可用
+    if (act === 'dash-edit') { enterEdit(); return; }
+    if (act === 'dash-done') { exitEdit(); return; }
+    if (act === 'dash-reset') { resetLayout(); return; }
+    if (act === 'set-card-size') { setCardSize(btn.dataset.id, btn.dataset.size); return; }
+
     if (act === 'goto-records') KC.router.navigate('records');
     else if (act === 'goto-planning') KC.router.navigate('planning');
     else if (act === 'goto-tasks') KC.router.navigate('tasks');
@@ -376,8 +749,21 @@
   KC.pages.dashboard = {
     mount: function (container) {
       pageState.container = container;
-      handlers = { click: handleClick };
-      container.addEventListener('click', handlers.click);
+      pageState.editing = false;
+      pageState.dragId = null;
+
+      handlers = {
+        click: handleClick,
+        dragstart: onDragStart,
+        dragover: onDragOver,
+        drop: onDrop,
+        dragend: onDragEnd
+      };
+      Object.keys(handlers).forEach(function (type) {
+        container.addEventListener(type, handlers[type]);
+      });
+      window.addEventListener('resize', onWinResize);
+
       unsubscribe = KC.store.subscribe(function (type) {
         if (type === 'change') render();
       });
@@ -385,11 +771,17 @@
     },
     unmount: function () {
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      window.removeEventListener('resize', onWinResize);
       if (handlers && pageState.container) {
-        pageState.container.removeEventListener('click', handlers.click);
+        Object.keys(handlers).forEach(function (type) {
+          pageState.container.removeEventListener(type, handlers[type]);
+        });
+        pageState.container.classList.remove('is-dash-editing');
       }
       handlers = null;
       pageState.container = null;
+      pageState.editing = false;
+      pageState.dragId = null;
     }
   };
 })(window.KC = window.KC || {});

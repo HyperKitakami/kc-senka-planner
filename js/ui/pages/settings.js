@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/pages/settings.js — 设置页
-   依据 docs/02_ui.md §4.8、docs/03_data.md Settings。
+   依据 docs/02_ui.md §4.9、docs/03_data.md Settings。
 
    覆盖 docs 列出的五类配置：外观、首页显示内容、默认规划方式、数据相关设置、其它偏好。
    另含「游戏服务器」（用于自动生成历史归档的人事表地址）。
@@ -33,30 +33,28 @@
 
   /* ------------------------------------------------------------ 小工具 */
 
-  function knownCardIds() {
-    return KC.ui.DASHBOARD_CARDS.map(function (c) { return c.id; });
-  }
-
   function cardLabel(id) {
     const hit = KC.ui.DASHBOARD_CARDS.filter(function (c) { return c.id === id; })[0];
     return hit ? hit.label : id;
   }
 
-  /** 顺序表自愈：过滤未知 id、补齐缺失的已知 id */
-  function normalizedOrder() {
-    const known = knownCardIds();
-    const stored = (KC.store.getSettings().dashboardOrder || []).filter(function (id) {
-      return known.indexOf(id) >= 0;
-    });
-    known.forEach(function (id) { if (stored.indexOf(id) < 0) stored.push(id); });
-    return stored;
+  function hiddenIds() {
+    return KC.ui.normalizeCardHidden(KC.store.getSettings());
   }
 
-  function hiddenIds() {
-    const known = knownCardIds();
-    return (KC.store.getSettings().dashboardHidden || []).filter(function (id) {
-      return known.indexOf(id) >= 0;
-    });
+  /** 三档尺寸按钮（与首页编辑模式下的控件同源，取同一份 CARD_SIZES） */
+  function sizeButtons(id, label, current) {
+    return '<span class="size-group" role="group" aria-label="' +
+      U.escapeHtml(label + '尺寸') + '">' +
+      KC.ui.CARD_SIZES.map(function (s) {
+        return '<button type="button" class="btn btn-icon btn-xs' +
+          (s.key === current ? ' active' : '') + '"' +
+          ' data-act="set-card-size" data-id="' + U.escapeHtml(id) + '"' +
+          ' data-size="' + s.key + '" title="' + U.escapeHtml('设为' + s.label + '号') + '"' +
+          ' aria-pressed="' + (s.key === current ? 'true' : 'false') + '">' +
+          U.escapeHtml(s.label) + '</button>';
+      }).join('') +
+      '</span>';
   }
 
   function fmtDateTime(iso) {
@@ -89,17 +87,21 @@
   }
 
   function dashboardPanel() {
-    const order = normalizedOrder();
-    const hidden = hiddenIds();
+    const settings = KC.store.getSettings();
+    const order = KC.ui.normalizeCardOrder(settings);
+    const hidden = KC.ui.normalizeCardHidden(settings);
+    const sizes = KC.ui.normalizeCardSizes(settings);
 
     const rows = order.map(function (id, index) {
       const isHidden = hidden.indexOf(id) >= 0;
+      const label = cardLabel(id);
       return '<div class="card-order-row' + (isHidden ? ' is-off' : '') + '">' +
         '<label class="check">' +
           '<input type="checkbox" data-act="toggle-card" data-id="' + U.escapeHtml(id) + '"' +
             (isHidden ? '' : ' checked') + '> 显示' +
         '</label>' +
-        '<span class="card-order-label">' + U.escapeHtml(cardLabel(id)) + '</span>' +
+        '<span class="card-order-label">' + U.escapeHtml(label) + '</span>' +
+        sizeButtons(id, label, sizes[id]) +
         '<span class="card-order-actions">' +
           '<button type="button" class="btn btn-icon btn-xs" data-act="move-card" data-id="' +
             U.escapeHtml(id) + '" data-dir="up"' + (index === 0 ? ' disabled' : '') +
@@ -116,8 +118,14 @@
     return '<div class="panel">' +
       '<div class="panel-head"><h2>首页显示内容</h2>' +
         '<span class="panel-count">显示 ' + visibleCount + ' / ' + order.length + ' 张卡片</span></div>' +
-      '<p class="panel-desc">首页按下列顺序展示已勾选的卡片。新增功能时会优先新增卡片，不会打乱这里的选择。</p>' +
+      '<p class="panel-desc">首页按下列顺序展示已勾选的卡片，尺寸可选小 / 中 / 大。' +
+        '同样的调整也能直接在首页点「编辑布局」拖动完成。' +
+        '新增功能时会优先新增卡片，不会打乱这里的选择。</p>' +
       '<div class="card-order-list">' + rows + '</div>' +
+      '<div class="panel-foot">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="reset-card-layout">' +
+          '恢复默认顺序与尺寸</button>' +
+      '</div>' +
       '</div>';
   }
 
@@ -275,7 +283,7 @@
   }
 
   async function moveCard(id, dir) {
-    const order = normalizedOrder();
+    const order = KC.ui.normalizeCardOrder(KC.store.getSettings());
     const i = order.indexOf(id);
     const j = dir === 'up' ? i - 1 : i + 1;
     if (i < 0 || j < 0 || j >= order.length) return;
@@ -286,6 +294,34 @@
     catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
   }
 
+  /** 与首页编辑模式共用同一份尺寸字段，两处改的是一致的配置 */
+  async function setCardSize(id, sizeKey) {
+    if (!KC.ui.isKnownCard(id)) return;
+    if (KC.ui.CARD_SIZES.map(function (s) { return s.key; }).indexOf(sizeKey) < 0) return;
+    const sizes = KC.ui.normalizeCardSizes(KC.store.getSettings());
+    sizes[id] = sizeKey;
+    try { await KC.store.saveSettings({ dashboardSizes: sizes }); }
+    catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
+  }
+
+  async function resetCardLayout() {
+    const ok = await KC.confirmDialog({
+      title: '恢复默认布局',
+      message: '将首页卡片的顺序与尺寸恢复为默认，卡片本身的显示 / 隐藏状态保留。确定继续吗？',
+      okText: '恢复'
+    });
+    if (!ok) return;
+    try {
+      await KC.store.saveSettings({
+        dashboardOrder: KC.ui.DASHBOARD_CARDS.map(function (c) { return c.id; }),
+        dashboardSizes: {}
+      });
+      KC.toast('已恢复默认顺序与尺寸');
+    } catch (err) {
+      KC.toast('恢复失败：' + err.message, 'error');
+    }
+  }
+
   function handleClick(e) {
     const btn = KC.dom.closestFrom(e.target, '[data-act]');
     if (!btn) return;
@@ -294,6 +330,8 @@
     if (act === 'set-theme') setTheme(btn.dataset.theme);
     else if (act === 'set-mode') setPlanningMode(btn.dataset.mode);
     else if (act === 'move-card') moveCard(btn.dataset.id, btn.dataset.dir);
+    else if (act === 'set-card-size') setCardSize(btn.dataset.id, btn.dataset.size);
+    else if (act === 'reset-card-layout') resetCardLayout();
     else if (act === 'goto-data') KC.router.navigate('data');
   }
 

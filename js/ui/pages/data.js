@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/pages/data.js — 数据管理页
-   依据 docs/02_ui.md §4.7、docs/01_requirements.md §六、docs/03_data.md §九、
+   依据 docs/02_ui.md §4.8、docs/01_requirements.md §六、docs/03_data.md §九、
         docs/06_data_strategy.md §四 / §五。
 
    职责（原则上不放置业务功能）：

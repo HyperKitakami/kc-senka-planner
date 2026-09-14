@@ -1,6 +1,6 @@
 /* ==========================================================================
    ui/pages/archive.js — 历史归档页
-   依据 docs/02_ui.md §4.6、docs/01_requirements.md §五、docs/03_data.md Archive、
+   依据 docs/02_ui.md §4.7、docs/01_requirements.md §五、docs/03_data.md Archive、
         docs/06_data_strategy.md §2.2 / §4.2。
 
    职责：

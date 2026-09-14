@@ -125,9 +125,15 @@
     dashboardOrder: [
       'currentSenka', 'target', 'remainingTarget', 'monthEndForecast',
       'todayGrowth', 'naturalDaily', 'requiredDaily', 'remainingPeriod',
-      'calendar'
+      'calendar', 'trend', 'recentSummary'
     ],
     dashboardHidden: [],
+    /**
+     * 首页卡片尺寸：id -> 'sm' | 'md' | 'lg'（docs/02_ui.md §五「卡片大小」）。
+     * 用映射而非数组：与 dashboardOrder 无关，改顺序不会连带错位；
+     * 未配置的卡片在读取时落回默认尺寸，因此新增卡片无需迁移。
+     */
+    dashboardSizes: {},
     /** 默认预测方式（docs/04_calculation.md §十一）：
      *  recent = 最近 N 天平均；period = 当前周期平均 */
     predictionMode: 'recent',
