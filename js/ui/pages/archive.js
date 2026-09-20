@@ -6,6 +6,7 @@
    职责：
      · 保存每月最终结果（最终战果、排名、奖励区间、奖励线、奖励装备、备注）
      · 长期查询：列表 + 详情
+     · 列表分页：单页条数可选 10 / 20 / 50（偏好存 settings.archivePageSize）
      · 人事表：按「归档月份 + 设置中的服务器」自动生成图片地址，不落库
      · 「计算战果」：按该月原始记录实时算出，作为独立一项与「最终战果」并列展示
    注意：
@@ -20,11 +21,17 @@
 
   KC.pages = KC.pages || {};
 
+  /** 可选单页显示数量（条）。顺序即下拉顺序，第一项同时是非法值的兜底 */
+  const PAGE_SIZES = [10, 20, 50];
+  const DEFAULT_PAGE_SIZE = PAGE_SIZES[0];
+
   const pageState = {
     container: null,
     formOpen: false,
     editingMonth: null,    // null = 新建
-    selectedMonth: null
+    selectedMonth: null,
+    page: 1,               // 列表当前页（1 起，仅本次会话有效）
+    pageSize: DEFAULT_PAGE_SIZE   // 每页条数，mount 时取自 settings.archivePageSize
   };
 
   let unsubscribe = null;
@@ -87,6 +94,73 @@
     return '<em class="diff ' + cls + '">' + sign + U.formatNumber(diff) + '</em>';
   }
 
+  /* -------------------------------------------------------------- 分页 */
+
+  /** 把任意输入归一到受支持的每页条数，非法值落回默认（10） */
+  function normalizePageSize(value) {
+    const n = Number(value);
+    return PAGE_SIZES.indexOf(n) >= 0 ? n : DEFAULT_PAGE_SIZE;
+  }
+
+  /**
+   * 按当前页码与每页条数切出本页记录。
+   * 页码越界（删记录、调小每页条数之后）会夹回有效范围并写回 pageState，
+   * 否则删掉末页最后一条时页面会停在空页上。
+   */
+  function paginate(list) {
+    const pageSize = normalizePageSize(pageState.pageSize);
+    const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+    const page = U.clamp(pageState.page, 1, totalPages);
+    const start = (page - 1) * pageSize;
+
+    pageState.page = page;
+    pageState.pageSize = pageSize;
+
+    return {
+      page: page,
+      pageSize: pageSize,
+      totalPages: totalPages,
+      total: list.length,
+      from: start + 1,
+      to: Math.min(start + pageSize, list.length),
+      items: list.slice(start, start + pageSize)
+    };
+  }
+
+  /** 「每页 N 条」下拉（选择结果写入 settings.archivePageSize） */
+  function pageSizeHtml(pg) {
+    const options = PAGE_SIZES.map(function (n) {
+      return '<option value="' + n + '"' + (n === pg.pageSize ? ' selected' : '') + '>' +
+        n + '</option>';
+    }).join('');
+
+    return '<label class="pager-size">每页' +
+      '<select data-act="page-size" aria-label="每页显示数量">' + options + '</select>条</label>';
+  }
+
+  /** 上一页 / 下一页；只有一页时不渲染 */
+  function pagerHtml(pg) {
+    if (pg.totalPages <= 1) return '';
+    return '<div class="pager">' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-act="page-prev"' +
+        (pg.page <= 1 ? ' disabled' : '') + '>上一页</button>' +
+      '<span class="pager-info">第 ' + pg.page + ' / ' + pg.totalPages + ' 页</span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-act="page-next"' +
+        (pg.page >= pg.totalPages ? ' disabled' : '') + '>下一页</button>' +
+      '</div>';
+  }
+
+  /** 让某个月份所在的页成为当前页（新建 / 编辑归档后定位，免得保存完看不见它） */
+  function focusMonthPage(month) {
+    const list = KC.store.listArchives();
+    let index = -1;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].month === month) { index = i; break; }
+    }
+    if (index < 0) return;
+    pageState.page = Math.floor(index / normalizePageSize(pageState.pageSize)) + 1;
+  }
+
   /* -------------------------------------------------------------- 渲染 */
 
   function renderStats() {
@@ -125,7 +199,9 @@
       return;
     }
 
-    const rows = list.map(function (a) {
+    const pg = paginate(list);
+
+    const rows = pg.items.map(function (a) {
       const short = tierShort(a.rewardTier);
       const live = calcFinalSenka(a.month);
       return '<tr' + (a.month === pageState.selectedMonth ? ' class="row-viewing"' : '') + '>' +
@@ -153,7 +229,12 @@
 
     host.innerHTML = '<div class="panel">' +
       '<div class="panel-head"><h2>归档记录</h2>' +
-        '<span class="panel-count">共 ' + list.length + ' 个月</span></div>' +
+        '<div class="panel-tools">' +
+          '<span class="panel-count">共 ' + pg.total + ' 个月' +
+            (pg.totalPages > 1 ? ' · 本页 ' + pg.from + '–' + pg.to + ' 条' : '') + '</span>' +
+          pageSizeHtml(pg) +
+        '</div>' +
+      '</div>' +
       '<div class="table-wrap"><table class="data-table">' +
         '<thead><tr>' +
           '<th>月份</th><th class="col-senka">最终战果</th><th class="col-senka">计算战果</th>' +
@@ -162,6 +243,7 @@
         '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
       '</table></div>' +
+      pagerHtml(pg) +
       '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
         '不保存入归档；括号内为它与「最终战果」的差值。</p>' +
       '</div>';
@@ -390,6 +472,8 @@
       pageState.formOpen = false;
       pageState.editingMonth = null;
       pageState.selectedMonth = record.month;
+      // 保存后跳到该月所在页，否则新建一条会落在第 1 页、而界面还停在原页
+      focusMonthPage(record.month);
       renderForm();
       renderAll();
       KC.toast('已保存 ' + U.monthLabel(record.month) + ' 的归档', 'ok');
@@ -455,6 +539,10 @@
       pageState.editingMonth = null;
       renderForm();
       renderDetail();
+    } else if (act === 'page-prev' || act === 'page-next') {
+      // 页码只改状态，越界由 paginate() 夹回有效范围
+      pageState.page += (act === 'page-next' ? 1 : -1);
+      renderList();
     } else if (act === 'delete-archive') {
       doDelete(btn.dataset.month);
     } else if (act === 'goto-settings') {
@@ -467,6 +555,14 @@
     if (!el || !el.dataset) return;
     if (el.dataset.act === 'form-tier') toggleFormConditional(el.value);
     else if (el.dataset.act === 'form-month') refreshCalcSenka();
+    else if (el.dataset.act === 'page-size') {
+      pageState.pageSize = normalizePageSize(el.value);
+      pageState.page = 1;   // 每页条数变了，旧页码没有意义，回到第一页
+      renderList();
+      // 仅显示偏好，写库失败不阻断
+      KC.store.saveSettings({ archivePageSize: pageState.pageSize })
+        .catch(function () { /* 忽略 */ });
+    }
   }
 
   /* -------------------------------------------------------------- 生命周期 */
@@ -493,6 +589,9 @@
       pageState.formOpen = false;
       pageState.editingMonth = null;
       pageState.selectedMonth = null;
+      // 页码每次进入页面从第 1 页开始；每页条数是跨会话偏好
+      pageState.page = 1;
+      pageState.pageSize = normalizePageSize(KC.store.getSettings().archivePageSize);
 
       handlers = { click: handleClick, change: handleChange, submit: handleSubmit };
       container.addEventListener('click', handlers.click);

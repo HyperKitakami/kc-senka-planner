@@ -1222,6 +1222,49 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .detail-note .btn { margin-left: 8px; }
 
+/* 归档列表分页：每页条数下拉（页头）+ 上一页 / 下一页（表尾） */
+.pager-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pager-size select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+
+.pager-size select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pager-info {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 外部链接（例如历史归档的「人事表」图片，点击才访问网络） */
 .ext-link {
   color: var(--primary-dark);
