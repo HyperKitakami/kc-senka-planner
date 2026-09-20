@@ -568,6 +568,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .form-actions { display: flex; gap: 8px; }
 .form-hint { margin: 12px 0 0; font-size: 11.5px; color: var(--text-faint); }
 
+/* 表单内的预警提示（如归档页「该月已有归档」）：与 form-hint 同尺寸，改用警示色 */
+.form-warn { color: var(--danger); }
+
 /* --------------------------------------------------------------------------
    表格
    -------------------------------------------------------------------------- */

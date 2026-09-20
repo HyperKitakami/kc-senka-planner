@@ -19,8 +19,9 @@
 
   /**
    * 确认弹窗。
-   * @param {{title?, message?, okText?, cancelText?, danger?, requireText?}} options
+   * @param {{title?, message?, okText?, cancelText?, danger?, requireText?, unlockDelayMs?}} options
    *   requireText：要求用户原样输入指定文字后才能确认（用于清空等高风险操作）
+   *   unlockDelayMs：确认按钮先禁用并倒计时，到点后才可点击（用于覆盖等不可逆操作，避免手滑）
    * @returns {Promise<boolean>}
    */
   function confirmDialog(options) {
@@ -28,6 +29,9 @@
     return new Promise(function (resolve) {
       const root = document.getElementById('modal-root');
       const needText = options.requireText ? String(options.requireText) : '';
+      const okText = options.okText || '确定';
+      // 倒计时锁：> 0 时确认按钮初始禁用，N 毫秒后才解锁
+      const lockMs = Number(options.unlockDelayMs) > 0 ? Number(options.unlockDelayMs) : 0;
 
       const backdrop = document.createElement('div');
       backdrop.className = 'modal-backdrop';
@@ -46,18 +50,56 @@
             '<button type="button" class="btn btn-ghost" data-act="cancel">' +
               U.escapeHtml(options.cancelText || '取消') + '</button>' +
             '<button type="button" class="btn ' + (options.danger ? 'btn-danger' : 'btn-primary') +
-              '" data-act="ok"' + (needText ? ' disabled' : '') + '>' +
-              U.escapeHtml(options.okText || '确定') + '</button>' +
+              '" data-act="ok"' + (needText || lockMs ? ' disabled' : '') + '>' +
+              U.escapeHtml(okText) + '</button>' +
           '</div>' +
         '</div>';
 
       const okBtn = backdrop.querySelector('[data-act="ok"]');
+      const cancelBtn = backdrop.querySelector('[data-act="cancel"]');
       const input = backdrop.querySelector('#modal-confirm-input');
 
       let done = false;
+      let unlocked = !lockMs;   // 无倒计时锁时视为已解锁
+      let lockTimer = null;
+
+      /** 当前是否允许确认：已解锁，且（无输入要求 或 输入已匹配） */
+      function canConfirm() {
+        if (!unlocked) return false;
+        if (needText === '') return true;
+        return !!(input && input.value.trim() === needText);
+      }
+
+      /** 同步确认按钮的可点状态（假 DOM 下可能查不到按钮，故先判空） */
+      function syncOkDisabled() {
+        if (okBtn) okBtn.disabled = !canConfirm();
+      }
+
+      /** 锁定期的按钮文案：okText（Ns）；解锁后恢复为 okText */
+      function setLockLabel(left) {
+        if (!okBtn) return;
+        okBtn.textContent = left > 0 ? okText + '（' + left + 's）' : okText;
+      }
+
+      // 倒计时锁：文案与解锁都只依赖计时器，不依赖按钮是否可查（便于测试与降级）
+      if (lockMs) {
+        let left = Math.ceil(lockMs / 1000);
+        setLockLabel(left);
+        lockTimer = setInterval(function () {
+          left -= 1;
+          if (left > 0) { setLockLabel(left); return; }
+          clearInterval(lockTimer);
+          lockTimer = null;
+          unlocked = true;
+          setLockLabel(0);
+          syncOkDisabled();
+        }, 1000);
+      }
+
       function close(result) {
         if (done) return;
         done = true;
+        if (lockTimer) { clearInterval(lockTimer); lockTimer = null; }
         document.removeEventListener('keydown', onKey);
         backdrop.remove();
         resolve(result);
@@ -65,15 +107,13 @@
       function onKey(e) {
         if (e.key === 'Escape') { close(false); return; }
         if (e.key === 'Enter') {
-          if (needText && (!input || input.value.trim() !== needText)) return;
+          if (!canConfirm()) return;   // 锁定期内回车无效，避免绕过延迟
           close(true);
         }
       }
 
       if (input) {
-        input.addEventListener('input', function () {
-          okBtn.disabled = input.value.trim() !== needText;
-        });
+        input.addEventListener('input', syncOkDisabled);
       }
 
       backdrop.addEventListener('click', function (e) {
@@ -81,13 +121,15 @@
         const btn = KC.dom.closestFrom(e.target, '[data-act]');
         if (!btn) return;
         if (btn.dataset.act === 'cancel') close(false);
-        if (btn.dataset.act === 'ok') close(true);
+        // 锁定或输入未匹配时按钮是 disabled，这里再兜一层，防止绕过延迟确认
+        if (btn.dataset.act === 'ok' && canConfirm()) close(true);
       });
       document.addEventListener('keydown', onKey);
 
       root.appendChild(backdrop);
       if (input) input.focus();
-      else if (okBtn) okBtn.focus();
+      else if (okBtn && !okBtn.disabled) okBtn.focus();
+      else if (cancelBtn) cancelBtn.focus();
     });
   }
 

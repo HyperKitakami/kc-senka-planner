@@ -42,6 +42,11 @@
 
   let unsubscribe = null;
   let handlers = null;
+  /** 提交进行中（等待覆盖确认弹窗）时为 true，避免回车 / 连点重复弹窗、重复写库 */
+  let submitLock = false;
+
+  /** 覆盖确认弹窗的延迟解锁时长（毫秒）：到点后才允许点「覆盖保存」 */
+  const OVERWRITE_UNLOCK_MS = 3000;
 
   /* ------------------------------------------------------------ 小工具 */
 
@@ -482,6 +487,8 @@
           '</label>' +
         '</div>' +
 
+        '<p class="form-hint form-warn" id="archive-dup-hint" hidden></p>' +
+
         '<div class="form-row">' +
           '<label class="field field-grow">' +
             '<span class="field-label">奖励区间</span>' +
@@ -521,6 +528,30 @@
       '</div>';
 
     toggleFormConditional(a.rewardTier);
+    refreshMonthNotice();
+  }
+
+  /**
+   * 表单内的覆盖预告：新建归档时若所选月份已有归档，**当场**给出提示，
+   * 不必等到点「保存归档」才被告知（保存时仍会弹确认框，见 confirmOverwrite）。
+   * 编辑归档不会换月份，不提示。
+   */
+  function refreshMonthNotice() {
+    const host = slot('archive-form-slot');
+    if (!host) return;
+    const hint = host.querySelector('#archive-dup-hint');
+    if (!hint) return;
+
+    const monthInput = host.querySelector('input[name="month"]');
+    const month = String((monthInput && monthInput.value) || '').trim();
+    const dup = (!pageState.editingMonth && /^\d{4}-\d{2}$/.test(month))
+      ? KC.store.getArchive(month)
+      : null;
+
+    hint.hidden = !dup;
+    hint.textContent = dup
+      ? '该月已有归档（最终战果 ' + U.formatNumber(dup.finalSenka) + '）'
+      : '';
   }
 
   function toggleFormConditional(tierKey) {
@@ -555,10 +586,36 @@
     display.value = /^\d{4}-\d{2}$/.test(month) ? U.formatNumber(calcFinalSenka(month)) : '—';
   }
 
-  function handleSubmit(e) {
+  /**
+   * 新建归档时若所选月份已存在归档，不静默覆盖：先弹警告，且确认按钮延迟 3s 才可点
+   * （docs/06_data_strategy.md §4.2「归档数据变更需显式确认」）。
+   * 编辑归档不适用——月份只读且该归档必然存在，逐次确认没有意义。
+   * @returns {Promise<boolean>} 可以继续保存时返回 true
+   */
+  async function confirmOverwrite(month) {
+    const exist = /^\d{4}-\d{2}$/.test(month) ? KC.store.getArchive(month) : null;
+    if (!exist) return true;
+
+    submitLock = true;
+    const ok = await KC.confirmDialog({
+      title: '该月份已有归档',
+      message: U.monthLabel(month) + ' 已存在归档记录（最终战果 ' +
+        U.formatNumber(exist.finalSenka) + '）。\n' +
+        '继续保存将用当前表单内容覆盖该月归档，被覆盖的内容不可恢复。',
+      okText: '覆盖保存',
+      cancelText: '取消',
+      danger: true,
+      unlockDelayMs: OVERWRITE_UNLOCK_MS
+    });
+    submitLock = false;
+    return ok;
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
     const form = e.target;
     if (!form || form.id !== 'archive-form') return;
+    if (submitLock) return;   // 覆盖确认弹窗未决时忽略重复提交
 
     const fd = new FormData(form);
     const input = {
@@ -573,6 +630,16 @@
         .filter(Boolean),
       note: fd.get('note')
     };
+
+    // 新建归档才需要防覆盖：编辑归档改的是它自己，月份只读
+    if (!pageState.editingMonth) {
+      const month = String(input.month || '').trim();
+      const ok = await confirmOverwrite(month);
+      if (!ok) {
+        KC.toast('已取消，未覆盖 ' + U.monthLabel(month) + ' 的归档');
+        return;   // 表单内容保留，用户可改月份后重试
+      }
+    }
 
     KC.store.saveArchive(input).then(function (record) {
       pageState.formOpen = false;
@@ -663,7 +730,7 @@
     const el = e.target;
     if (!el || !el.dataset) return;
     if (el.dataset.act === 'form-tier') toggleFormConditional(el.value);
-    else if (el.dataset.act === 'form-month') refreshCalcSenka();
+    else if (el.dataset.act === 'form-month') { refreshCalcSenka(); refreshMonthNotice(); }
     else if (el.dataset.act === 'filter-year' || el.dataset.act === 'filter-tier') {
       if (el.dataset.act === 'filter-year') pageState.filterYear = String(el.value || '');
       else pageState.filterTier = String(el.value || '');
@@ -732,6 +799,7 @@
         pageState.container.removeEventListener('submit', handlers.submit);
       }
       handlers = null;
+      submitLock = false;
       pageState.container = null;
       pageState.formOpen = false;
       pageState.editingMonth = null;
