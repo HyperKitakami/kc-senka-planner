@@ -148,6 +148,22 @@
      */
     archivePageSize: 10,
     /**
+     * 「月度比较」卡片要包含的数据（docs/02_ui.md §4.6）。
+     * 取值来自 KC.calc.analysis.COMPARE_METRICS 的 key：
+     *   'inherited' 继承战果 / 'sortie' 出击战果 / 'eo' EO 战果 / 'task' 任务战果
+     * 默认四项全选；空数组表示用户主动取消全部勾选（页面会提示至少勾一项）。
+     * 仅影响该卡片的展示，不改变任何业务数据；非法值在页面里落回四项全选。
+     */
+    compareMetrics: ['inherited', 'sortie', 'eo', 'task'],
+    /**
+     * 「月度比较」横轴区间的起止月份（'YYYY-MM'），null = 未设定。
+     * 两者都未设定时回退「最近 12 个月」；可自由指定，跨度上限 24 个月。
+     * 归一化（含起止颠倒交换、超长截断）见 KC.calc.analysis.normalizeCompareRange。
+     * 仅影响该卡片的展示，不改变任何业务数据。
+     */
+    compareFrom: null,
+    compareTo: null,
+    /**
      * 所在游戏服务器编号（'01'～'20'），null 表示未设定。
      * 仅用于自动生成「人事表」图片地址，不影响任何业务数据。
      */

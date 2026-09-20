@@ -14,7 +14,7 @@
 
   KC.pages = KC.pages || {};
 
-  const COMPARE_MONTHS = 12;
+  /** 「历史月份统计」列表最多列出多少个月（与月度比较的区间上限无关） */
   const HISTORY_LIMIT = 24;
 
   const pageState = { container: null, month: null, charts: [] };
@@ -60,6 +60,42 @@
 
   function axisTicks(textColor) {
     return { color: textColor, maxRotation: 0, autoSkip: true };
+  }
+
+  /**
+   * 四项战果构成的配色，「战果构成」与「月度比较」两张卡片共用同一份，
+   * 因此同项在两处颜色必然一致（key 与 KC.calc.analysis.COMPARE_METRICS 一致）。
+   */
+  function partColors() {
+    return {
+      inherited: color('--senka-inherited', '#8b93a7'),
+      sortie: color('--senka-planned', '#2f6fed'),
+      eo: color('--senka-actual', '#b98420'),
+      task: color('--senka-task', '#128a4d')
+    };
+  }
+
+  /** 当前生效的月度比较项（来自 settings.compareMetrics，非法值回退四项全选） */
+  function compareMetricKeys() {
+    return KC.calc.analysis.normalizeCompareMetrics(KC.store.getSettings().compareMetrics);
+  }
+
+  /** 当前勾选的数据项（按 COMPARE_METRICS 的固定顺序，即堆叠顺序） */
+  function selectedMetrics() {
+    const keys = compareMetricKeys();
+    return KC.calc.analysis.COMPARE_METRICS.filter(function (m) {
+      return keys.indexOf(m.key) >= 0;
+    });
+  }
+
+  /**
+   * 当前生效的月度比较区间（settings.compareFrom / compareTo 归一化后的结果）。
+   * 归一化保证 from ≤ to、跨度 ≤ COMPARE_MAX_MONTHS、缺失时回退最近 12 个月。
+   */
+  function compareRange() {
+    const settings = KC.store.getSettings();
+    return KC.calc.analysis.normalizeCompareRange(
+      settings.compareFrom, settings.compareTo, new Date());
   }
 
   /* -------------------------------------------------------------- 图表 */
@@ -123,17 +159,31 @@
     }));
   }
 
-  function buildCompareChart(records, monthKeys) {
+  /**
+   * 「月度比较」堆叠柱状图。
+   * 每根柱子按当前勾选的数据项堆叠，颜色与「战果构成」一致；
+   * 未勾选任何一项时给出提示，不画空图。
+   */
+  function buildCompareChart(store, monthKeys) {
     const canvas = slot('chart-compare');
     if (!canvas || !hasChartJs()) return;
 
-    const data = KC.calc.analysis.monthlyComparison(records, monthKeys);
-    if (!data.some(function (d) { return d.total > 0; })) {
-      replaceWithFallback(canvas, '最近 ' + monthKeys.length + ' 个月还没有出击记录。');
+    const metrics = selectedMetrics();
+    if (!metrics.length) {
+      replaceWithFallback(canvas, '至少勾选一项数据。');
       return;
     }
 
-    const barColor = color('--senka-planned', '#2f6fed');
+    const data = KC.calc.analysis.monthlyComparison(store, monthKeys, new Date());
+    const hasData = data.some(function (d) {
+      return metrics.some(function (m) { return d[m.key] > 0; });
+    });
+    if (!hasData) {
+      replaceWithFallback(canvas, '最近 ' + monthKeys.length + ' 个月所选数据都还没有战果。');
+      return;
+    }
+
+    const palette = partColors();
     const gridColor = color('--border', '#e4e8ee');
     const textColor = color('--text-muted', '#667085');
 
@@ -141,30 +191,47 @@
       type: 'bar',
       data: {
         labels: data.map(function (d) { return d.label; }),
-        datasets: [{
-          label: '累计出击战果',
-          data: data.map(function (d) { return d.total; }),
-          backgroundColor: barColor, borderRadius: 4, maxBarThickness: 30
-        }]
+        datasets: metrics.map(function (m, i) {
+          return {
+            label: m.label,
+            data: data.map(function (d) { return d[m.key]; }),
+            backgroundColor: palette[m.key],
+            stack: 'senka',
+            maxBarThickness: 30,
+            // 只有最上面一段圆角，堆叠柱的柱顶才好看
+            borderRadius: i === metrics.length - 1 ? 4 : 0
+          };
+        })
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: metrics.length > 1
+            ? {
+                position: 'bottom',
+                labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, color: textColor }
+              }
+            : { display: false },
           tooltip: {
             callbacks: {
-              afterLabel: function (ctx) {
-                const item = data[ctx.dataIndex];
-                return '记录 ' + item.count + ' 天' +
+              afterBody: function (items) {
+                if (!items.length) return '';
+                const item = data[items[0].dataIndex];
+                return '合计 ' + U.formatNumber(item.actual) +
+                  ' · 记录 ' + item.count + ' 天' +
                   (item.max === null ? '' : ' · 单日最高 ' + U.formatNumber(item.max));
               }
             }
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: axisTicks(textColor) },
-          y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } }
+          x: { stacked: true, grid: { display: false }, ticks: axisTicks(textColor) },
+          y: {
+            stacked: true, beginAtZero: true,
+            grid: { color: gridColor }, ticks: { color: textColor }
+          }
         }
       }
     }));
@@ -180,12 +247,7 @@
       return;
     }
 
-    const palette = {
-      inherited: '#8b93a7',
-      sortie: color('--senka-planned', '#2f6fed'),
-      eo: color('--senka-actual', '#b98420'),
-      task: '#128a4d'
-    };
+    const palette = partColors();
     const textColor = color('--text-muted', '#667085');
 
     pageState.charts.push(new window.Chart(canvas, {
@@ -271,13 +333,51 @@
       '</div>';
   }
 
-  function comparePanel() {
+  /** 「月度比较」横轴区间：起止月份 + 快捷回到默认区间 */
+  function rangeBarHtml(range) {
+    const A = KC.calc.analysis;
+    return '<div class="range-bar">' +
+      '<label class="range-field">从' +
+        '<input type="month" data-act="compare-from" value="' + U.escapeHtml(range.from) +
+          '" aria-label="月度比较起始月份">' +
+      '</label>' +
+      '<span class="range-sep">～</span>' +
+      '<label class="range-field">到' +
+        '<input type="month" data-act="compare-to" value="' + U.escapeHtml(range.to) +
+          '" aria-label="月度比较结束月份">' +
+      '</label>' +
+      '<button type="button" class="btn btn-ghost btn-sm range-reset" data-act="compare-reset">' +
+        '最近 ' + A.COMPARE_DEFAULT_MONTHS + ' 个月</button>' +
+      '</div>';
+  }
+
+  /** 「月度比较」的勾选框：顺序与堆叠顺序一致，勾选结果存 settings.compareMetrics */
+  function metricTogglesHtml() {
+    const keys = compareMetricKeys();
+    return '<div class="metric-toggles">' +
+      KC.calc.analysis.COMPARE_METRICS.map(function (m) {
+        return '<label class="check"><input type="checkbox" data-act="compare-metric" data-key="' +
+          m.key + '"' + (keys.indexOf(m.key) >= 0 ? ' checked' : '') + '>' +
+          U.escapeHtml(m.label) + '</label>';
+      }).join('') +
+      '</div>';
+  }
+
+  function comparePanel(range) {
+    const A = KC.calc.analysis;
+    const count = selectedMetrics().length;
     return '<div class="panel">' +
       '<div class="panel-head"><h2>月度比较</h2>' +
-        '<span class="panel-count">最近 ' + COMPARE_MONTHS + ' 个月</span></div>' +
+        '<span class="panel-count">' + range.months.length + ' 个月' +
+          (count ? '' : ' · 未选择数据') + '</span></div>' +
+      rangeBarHtml(range) +
+      metricTogglesHtml() +
       (hasChartJs()
         ? '<div class="chart-box"><canvas id="chart-compare"></canvas></div>'
         : chartFallback('图表库未加载，暂时无法显示图表。')) +
+      '<p class="form-hint">横轴区间可自由选择（1 ～ ' + A.COMPARE_MAX_MONTHS +
+        ' 个月，超长会自动截断）；勾选要比较的数据项，颜色与「战果构成」一致；' +
+        '堆叠柱的高度即该月实际战果（继承 + 出击 + EO + 任务）。</p>' +
       '</div>';
   }
 
@@ -347,7 +447,7 @@
     const summary = KC.calc.stats.monthSummary(records, month, now);
     const comp = KC.calc.analysis.monthComposition(KC.store, month, now);
     const isCurrent = month === KC.periods.currentAttributionMonth(now);
-    const compareMonths = KC.calc.analysis.recentMonths(now, COMPARE_MONTHS);
+    const range = compareRange();
     const history = KC.calc.analysis.availableMonths(KC.store, now).slice(0, HISTORY_LIMIT);
 
     host.innerHTML =
@@ -355,15 +455,88 @@
       '<div class="card-grid">' + statCards(summary, comp.plan) + '</div>' +
       progressPanel(comp.plan) +
       dailyPanel(month) +
-      '<div class="dash-split">' + comparePanel() + compositionPanel(comp) + '</div>' +
+      '<div class="dash-split">' + comparePanel(range) + compositionPanel(comp) + '</div>' +
       historyPanel(history, now);
 
     buildDailyChart(records, month);
-    buildCompareChart(records, compareMonths);
+    buildCompareChart(KC.store, range.months);
     buildCompositionChart(comp);
   }
 
   /* -------------------------------------------------------------- 交互 */
+
+  /**
+   * 勾选 / 取消「月度比较」的数据项。
+   * 只写 settings，界面交给 store 广播的 change 重绘——
+   * 这样保存失败时页面保持原样，不会出现"勾上了却没存住"的假象。
+   */
+  function handleChange(e) {
+    const el = e.target;
+    if (!el || !el.dataset) return;
+
+    if (el.dataset.act === 'compare-from' || el.dataset.act === 'compare-to') {
+      const isFrom = el.dataset.act === 'compare-from';
+      applyCompareRange(isFrom ? el.value : undefined, isFrom ? undefined : el.value, el);
+      return;
+    }
+
+    if (el.dataset.act !== 'compare-metric') return;
+
+    const key = el.dataset.key;
+    const current = compareMetricKeys();
+    const has = current.indexOf(key) >= 0;
+    // 存库前归一化：过滤未知 key 并按 COMPARE_METRICS 的固定顺序重排，
+    // 免得"后勾的排最后"这种顺序被写进设置（页面虽然会归一化读取，但存值应当干净）
+    const next = KC.calc.analysis.normalizeCompareMetrics(
+      el.checked
+        ? (has ? current : current.concat([key]))
+        : current.filter(function (k) { return k !== key; })
+    );
+
+    KC.store.saveSettings({ compareMetrics: next })
+      .catch(function (err) { KC.toast(err.message, 'error'); });
+  }
+
+  /**
+   * 保存月度比较区间。只改一端时，另一端沿用当前设置。
+   * 传 null 表示"该端用默认值"（「最近 12 个月」按钮走这条路）。
+   *
+   * 存进设置的一律是**归一化之后**的值，也就是界面上真正画出来的区间——
+   * 这样"设置 = 生效区间"是唯一不变量，输入框不会显示一个并不是当前区间的月份。
+   * 因此超长截断只能在这里告知用户（设置落库后已经夹好，重绘时再算就看不到 truncated 了）。
+   *
+   * @param {string|undefined|null} from  undefined = 沿用当前设置；null = 用默认值
+   * @param {string|undefined|null} to
+   * @param {object} [input] 触发本次变更的输入框（用于把用户填的无效值拨回生效值）
+   */
+  function applyCompareRange(from, to, input) {
+    const A = KC.calc.analysis;
+    const settings = KC.store.getSettings();
+    const range = A.normalizeCompareRange(
+      from === undefined ? settings.compareFrom : from,
+      to === undefined ? settings.compareTo : to,
+      new Date()
+    );
+
+    if (range.from === settings.compareFrom && range.to === settings.compareTo) {
+      // 归一化结果与现有区间一致：不落库也不重绘。
+      // 但输入框里可能还留着用户刚填的不合理值（超长 / 颠倒 / 清空），
+      // 直接把它拨回生效值，免得界面显示一个并不是当前区间的月份。
+      if (input) {
+        const want = from === undefined ? range.to : range.from;
+        if (input.value !== want) input.value = want;
+      }
+      return;
+    }
+
+    if (range.truncated) {
+      KC.toast('区间最长 ' + A.COMPARE_MAX_MONTHS + ' 个月，已截断为 ' +
+        range.from + ' ～ ' + range.to, 'ok');
+    }
+
+    KC.store.saveSettings({ compareFrom: range.from, compareTo: range.to })
+      .catch(function (err) { KC.toast(err.message, 'error'); });
+  }
 
   function handleClick(e) {
     const btn = KC.dom.closestFrom(e.target, '[data-act]');
@@ -383,6 +556,8 @@
       pageState.month = btn.dataset.month;
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (act === 'compare-reset') {
+      applyCompareRange(null, null);
     }
   }
 
@@ -394,8 +569,9 @@
       pageState.month = KC.periods.currentAttributionMonth(new Date());
       pageState.charts = [];
 
-      handlers = { click: handleClick };
+      handlers = { click: handleClick, change: handleChange };
       container.addEventListener('click', handlers.click);
+      container.addEventListener('change', handlers.change);
 
       unsubscribe = KC.store.subscribe(function (type) {
         if (type === 'change') render();
@@ -407,6 +583,7 @@
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
       if (handlers && pageState.container) {
         pageState.container.removeEventListener('click', handlers.click);
+        pageState.container.removeEventListener('change', handlers.change);
       }
       handlers = null;
       destroyCharts();

@@ -43,6 +43,9 @@
   --senka-actual: #b98420;      /* 已获得战果 */
   --senka-planned: #2f6fed;     /* 已规划战果 */
   --senka-remaining: #e2e7ee;   /* 尚未完成目标 */
+  /* 战果构成的另两项：「战果构成」与「月度比较」两卡片共用，保证同项同色 */
+  --senka-inherited: #8b93a7;   /* 继承战果 */
+  --senka-task: #128a4d;        /* 任务战果 */
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -102,6 +105,8 @@
   --senka-actual: #d9a445;
   --senka-planned: #4c86f0;
   --senka-remaining: #2b323d;
+  --senka-inherited: #9aa3b6;
+  --senka-task: #45b479;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
   --shadow: 0 1px 2px rgba(0, 0, 0, .30), 0 6px 16px rgba(0, 0, 0, .38);
@@ -685,6 +690,54 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .check input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
 
+/* 数据分析页「月度比较」的数据项勾选：顺序与堆叠顺序一致 */
+.metric-toggles {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+/* 数据分析页「月度比较」横轴区间：起止月份 + 快捷回到默认区间 */
+.range-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.range-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.range-field input[type="month"] {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  transition: border-color .12s, box-shadow .12s;
+}
+
+.range-field input[type="month"]:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.range-sep { color: var(--text-faint); }
+.range-bar .range-reset { margin-left: auto; }
+
 .pool-bar {
   display: flex;
   align-items: center;
@@ -1264,6 +1317,49 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+
+/* 归档列表筛选（年份 / 奖励区间）：只作用于列表，统计卡仍按全量算 */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.filter-field select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 118px;
+  transition: border-color .12s, box-shadow .12s;
+}
+
+.filter-field select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* 重置按钮靠右，只在有筛选条件时出现 */
+.filter-bar .filter-reset { margin-left: auto; }
+
+.empty-inline .btn { margin-left: 10px; }
 
 /* 外部链接（例如历史归档的「人事表」图片，点击才访问网络） */
 .ext-link {

@@ -7,6 +7,7 @@
      · 保存每月最终结果（最终战果、排名、奖励区间、奖励线、奖励装备、备注）
      · 长期查询：列表 + 详情
      · 列表分页：单页条数可选 10 / 20 / 50（偏好存 settings.archivePageSize）
+     · 列表筛选：按年份 / 奖励区间过滤（只作用于列表，统计卡始终按全量算）
      · 人事表：按「归档月份 + 设置中的服务器」自动生成图片地址，不落库
      · 「计算战果」：按该月原始记录实时算出，作为独立一项与「最终战果」并列展示
    注意：
@@ -25,13 +26,18 @@
   const PAGE_SIZES = [10, 20, 50];
   const DEFAULT_PAGE_SIZE = PAGE_SIZES[0];
 
+  /** 奖励区间筛选里代表「未记录」的伪值（不会与 REWARD_TIERS 的 key 冲突） */
+  const TIER_NONE = 'none';
+
   const pageState = {
     container: null,
     formOpen: false,
     editingMonth: null,    // null = 新建
     selectedMonth: null,
     page: 1,               // 列表当前页（1 起，仅本次会话有效）
-    pageSize: DEFAULT_PAGE_SIZE   // 每页条数，mount 时取自 settings.archivePageSize
+    pageSize: DEFAULT_PAGE_SIZE,  // 每页条数，mount 时取自 settings.archivePageSize
+    filterYear: '',        // '' = 全部年份，否则 'YYYY'（仅本次会话有效）
+    filterTier: ''         // '' = 全部奖励区间，否则 REWARD_TIERS 的 key 或 TIER_NONE
   };
 
   let unsubscribe = null;
@@ -152,13 +158,97 @@
 
   /** 让某个月份所在的页成为当前页（新建 / 编辑归档后定位，免得保存完看不见它） */
   function focusMonthPage(month) {
-    const list = KC.store.listArchives();
+    // 刚保存的归档可能被当前筛选条件挡掉，先让条件让路，否则「保存成功却看不到」
+    const saved = KC.store.getArchive(month);
+    if (saved && !matchesFilter(saved)) {
+      pageState.filterYear = '';
+      pageState.filterTier = '';
+    }
+
+    const list = KC.store.listArchives().filter(matchesFilter);
     let index = -1;
     for (let i = 0; i < list.length; i++) {
       if (list[i].month === month) { index = i; break; }
     }
     if (index < 0) return;
     pageState.page = Math.floor(index / normalizePageSize(pageState.pageSize)) + 1;
+  }
+
+  /* -------------------------------------------------------------- 筛选 */
+
+  function hasFilter() {
+    return pageState.filterYear !== '' || pageState.filterTier !== '';
+  }
+
+  /** 单条归档是否命中当前筛选条件 */
+  function matchesFilter(a) {
+    if (pageState.filterYear && String(a.month).slice(0, 4) !== pageState.filterYear) return false;
+    if (pageState.filterTier === TIER_NONE) return !a.rewardTier;
+    if (pageState.filterTier && a.rewardTier !== pageState.filterTier) return false;
+    return true;
+  }
+
+  /** 现有归档中出现过的年份，倒序（筛选下拉的选项来源） */
+  function archiveYears() {
+    const years = [];
+    KC.store.listArchives().forEach(function (a) {
+      const y = String(a.month).slice(0, 4);
+      if (years.indexOf(y) < 0) years.push(y);
+    });
+    return years.sort().reverse();
+  }
+
+  /** 重置筛选条件（含页码） */
+  function resetFilter() {
+    pageState.filterYear = '';
+    pageState.filterTier = '';
+    pageState.page = 1;
+  }
+
+  /**
+   * 筛选条：年份 + 奖励区间。
+   * 年份选项由现有归档推导（没有归档的年份不出现），奖励区间取 schema 的固定枚举 + 「未记录」。
+   * 只作用于下方列表；上方统计卡始终按全量算。
+   */
+  function filterBarHtml() {
+    const yearOptions = ['<option value=""' +
+      (pageState.filterYear === '' ? ' selected' : '') + '>全部年份</option>'].concat(
+      archiveYears().map(function (y) {
+        return '<option value="' + y + '"' + (y === pageState.filterYear ? ' selected' : '') + '>' +
+          y + ' 年</option>';
+      })
+    ).join('');
+
+    const tierOptions = ['<option value=""' +
+      (pageState.filterTier === '' ? ' selected' : '') + '>全部奖励区间</option>'].concat(
+      KC.schema.REWARD_TIERS.map(function (t) {
+        return '<option value="' + t.key + '"' + (t.key === pageState.filterTier ? ' selected' : '') +
+          '>' + U.escapeHtml(tierShort(t.key)) + '</option>';
+      }),
+      ['<option value="' + TIER_NONE + '"' + (pageState.filterTier === TIER_NONE ? ' selected' : '') +
+        '>未记录</option>']
+    ).join('');
+
+    return '<div class="filter-bar">' +
+      '<label class="filter-field">年份' +
+        '<select data-act="filter-year" aria-label="按年份筛选">' + yearOptions + '</select>' +
+      '</label>' +
+      '<label class="filter-field">奖励区间' +
+        '<select data-act="filter-tier" aria-label="按奖励区间筛选">' + tierOptions + '</select>' +
+      '</label>' +
+      (hasFilter()
+        ? '<button type="button" class="btn btn-ghost btn-sm filter-reset" data-act="filter-reset">' +
+          '重置筛选</button>'
+        : '') +
+      '</div>';
+  }
+
+  /** 面板右上角的条数文案：有筛选时同时给出「筛选后 / 全部」 */
+  function countText(pg, totalAll) {
+    const text = hasFilter()
+      ? '筛选后 ' + pg.total + ' / ' + totalAll + ' 个月'
+      : '共 ' + pg.total + ' 个月';
+    return text + (pg.totalPages > 1 ? ' · 本页 ' + pg.from + '–' + pg.to + ' 条' : '');
   }
 
   /* -------------------------------------------------------------- 渲染 */
@@ -190,8 +280,8 @@
     const host = slot('archive-list-slot');
     if (!host) return;
 
-    const list = KC.store.listArchives();
-    if (!list.length) {
+    const all = KC.store.listArchives();
+    if (!all.length) {
       host.innerHTML = '<div class="panel">' +
         '<div class="panel-head"><h2>归档记录</h2></div>' +
         '<div class="empty-inline">还没有归档记录。点右上角「新建归档」，记录某个月的最终结果。</div>' +
@@ -199,53 +289,69 @@
       return;
     }
 
+    // 年份下拉的选项由现有归档推导；选中的年份已不存在（最后一条被删）时复位，
+    // 否则会出现"下拉里没有这个年份、列表却是空的"这种死状态。
+    if (pageState.filterYear && archiveYears().indexOf(pageState.filterYear) < 0) {
+      pageState.filterYear = '';
+    }
+
+    const list = all.filter(matchesFilter);
     const pg = paginate(list);
 
-    const rows = pg.items.map(function (a) {
-      const short = tierShort(a.rewardTier);
-      const live = calcFinalSenka(a.month);
-      return '<tr' + (a.month === pageState.selectedMonth ? ' class="row-viewing"' : '') + '>' +
-        '<td class="cell-date">' + U.escapeHtml(U.monthLabel(a.month)) + '</td>' +
-        '<td class="col-senka">' + U.formatNumber(a.finalSenka) + '</td>' +
-        '<td class="col-senka">' + U.formatNumber(live) +
-          diffHtml(U.round2(live - a.finalSenka)) + '</td>' +
-        '<td class="num">' + (a.rank === null ? '<span class="muted">—</span>' : a.rank) + '</td>' +
-        '<td>' + (short
-          ? U.escapeHtml(short) + (a.rewardFirst ? '<span class="tag tag-first">人事</span>' : '')
-          : '<span class="muted">—</span>') + '</td>' +
-        '<td class="num">' + (a.rewardLine === null
-          ? '<span class="muted">—</span>'
-          : U.formatNumber(a.rewardLine) + diffHtml(a.lineDiff)) + '</td>' +
-        '<td class="actions">' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-act="view-archive" data-month="' +
-            U.escapeHtml(a.month) + '">详情</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-act="edit-archive" data-month="' +
-            U.escapeHtml(a.month) + '">编辑</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm btn-danger-text" data-act="delete-archive" data-month="' +
-            U.escapeHtml(a.month) + '">删除</button>' +
-        '</td>' +
-        '</tr>';
-    }).join('');
+    let body;
+    if (!list.length) {
+      body = '<div class="empty-inline">没有符合筛选条件的归档记录。' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="filter-reset">重置筛选</button>' +
+        '</div>';
+    } else {
+      const rows = pg.items.map(function (a) {
+        const short = tierShort(a.rewardTier);
+        const live = calcFinalSenka(a.month);
+        return '<tr' + (a.month === pageState.selectedMonth ? ' class="row-viewing"' : '') + '>' +
+          '<td class="cell-date">' + U.escapeHtml(U.monthLabel(a.month)) + '</td>' +
+          '<td class="col-senka">' + U.formatNumber(a.finalSenka) + '</td>' +
+          '<td class="col-senka">' + U.formatNumber(live) +
+            diffHtml(U.round2(live - a.finalSenka)) + '</td>' +
+          '<td class="num">' + (a.rank === null ? '<span class="muted">—</span>' : a.rank) + '</td>' +
+          '<td>' + (short
+            ? U.escapeHtml(short) + (a.rewardFirst ? '<span class="tag tag-first">人事</span>' : '')
+            : '<span class="muted">—</span>') + '</td>' +
+          '<td class="num">' + (a.rewardLine === null
+            ? '<span class="muted">—</span>'
+            : U.formatNumber(a.rewardLine) + diffHtml(a.lineDiff)) + '</td>' +
+          '<td class="actions">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-act="view-archive" data-month="' +
+              U.escapeHtml(a.month) + '">详情</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-act="edit-archive" data-month="' +
+              U.escapeHtml(a.month) + '">编辑</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm btn-danger-text" data-act="delete-archive" data-month="' +
+              U.escapeHtml(a.month) + '">删除</button>' +
+          '</td>' +
+          '</tr>';
+      }).join('');
 
-    host.innerHTML = '<div class="panel">' +
-      '<div class="panel-head"><h2>归档记录</h2>' +
-        '<div class="panel-tools">' +
-          '<span class="panel-count">共 ' + pg.total + ' 个月' +
-            (pg.totalPages > 1 ? ' · 本页 ' + pg.from + '–' + pg.to + ' 条' : '') + '</span>' +
-          pageSizeHtml(pg) +
-        '</div>' +
-      '</div>' +
-      '<div class="table-wrap"><table class="data-table">' +
+      body = '<div class="table-wrap"><table class="data-table">' +
         '<thead><tr>' +
           '<th>月份</th><th class="col-senka">最终战果</th><th class="col-senka">计算战果</th>' +
           '<th class="num">排名</th>' +
           '<th>奖励区间</th><th class="num">奖励线（差值）</th><th class="actions">操作</th>' +
         '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
-      '</table></div>' +
-      pagerHtml(pg) +
-      '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
-        '不保存入归档；括号内为它与「最终战果」的差值。</p>' +
+        '</table></div>' +
+        pagerHtml(pg) +
+        '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
+          '不保存入归档；括号内为它与「最终战果」的差值。</p>';
+    }
+
+    host.innerHTML = '<div class="panel">' +
+      '<div class="panel-head"><h2>归档记录</h2>' +
+        '<div class="panel-tools">' +
+          '<span class="panel-count">' + countText(pg, all.length) + '</span>' +
+          pageSizeHtml(pg) +
+        '</div>' +
+      '</div>' +
+      filterBarHtml() +
+      body +
       '</div>';
   }
 
@@ -543,6 +649,9 @@
       // 页码只改状态，越界由 paginate() 夹回有效范围
       pageState.page += (act === 'page-next' ? 1 : -1);
       renderList();
+    } else if (act === 'filter-reset') {
+      resetFilter();
+      renderList();
     } else if (act === 'delete-archive') {
       doDelete(btn.dataset.month);
     } else if (act === 'goto-settings') {
@@ -555,7 +664,12 @@
     if (!el || !el.dataset) return;
     if (el.dataset.act === 'form-tier') toggleFormConditional(el.value);
     else if (el.dataset.act === 'form-month') refreshCalcSenka();
-    else if (el.dataset.act === 'page-size') {
+    else if (el.dataset.act === 'filter-year' || el.dataset.act === 'filter-tier') {
+      if (el.dataset.act === 'filter-year') pageState.filterYear = String(el.value || '');
+      else pageState.filterTier = String(el.value || '');
+      pageState.page = 1;   // 筛选条件变了，旧页码没有意义，回到第一页
+      renderList();
+    } else if (el.dataset.act === 'page-size') {
       pageState.pageSize = normalizePageSize(el.value);
       pageState.page = 1;   // 每页条数变了，旧页码没有意义，回到第一页
       renderList();
@@ -592,6 +706,8 @@
       // 页码每次进入页面从第 1 页开始；每页条数是跨会话偏好
       pageState.page = 1;
       pageState.pageSize = normalizePageSize(KC.store.getSettings().archivePageSize);
+      // 筛选条件同页码，只在本次会话内有效
+      resetFilter();
 
       handlers = { click: handleClick, change: handleChange, submit: handleSubmit };
       container.addEventListener('click', handlers.click);
@@ -620,6 +736,7 @@
       pageState.formOpen = false;
       pageState.editingMonth = null;
       pageState.selectedMonth = null;
+      resetFilter();
     }
   };
 })(window.KC = window.KC || {});
