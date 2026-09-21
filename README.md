@@ -69,6 +69,7 @@
 - 数据层：IndexedDB，封装于 `js/core/db.js`
 - 图表：`vendor/chart.umd.min.js`（Chart.js 4.5.1，MIT，本地引入）
 - 统计结果 **一律运行时计算，绝不落库**（见 `docs/03_data.md` §1.2）
+- 程序版本号在 `js/core/version.js`（无 `package.json`，故需手工与 README、git tag 保持同步）
 
 ### 目录结构
 
@@ -76,6 +77,7 @@
 index.html                 唯一入口，按依赖顺序引入全部脚本
 css/style.css              :root 与 :root[data-theme="dark"] 两套配色变量
 js/core/   utils            通用工具
+           version          程序版本号（唯一代码载体）
            periods          周期解析与两套时间边界
            schema           数据结构、schemaVersion、迁移链
            db               IndexedDB 封装（含导入 / 合并 / 导出）
@@ -179,7 +181,15 @@ git archive HEAD | tar -x -C /tmp/kc-check
 
 ## 版本
 
-当前基线：**`v0.2.0`** —— 9 个导航页全部实现，并接入 poi 数据。
+当前版本：**`v0.3.0`** —— 版本号有了代码载体（`js/core/version.js`），并在「设置 → 关于」里可见。
+
+> **维护规则**：版本号有 **三个落点，发布时必须成对更新** ——
+> ① `js/core/version.js` 的 `VERSION`（代码载体，设置页读它）
+> ② 本段
+> ③ git tag。
+>
+> ⚠️ 别和 `KC.schema.SCHEMA_VERSION`（**数据结构版本**，导出文件里存的是它）弄混：
+> 程序版本变了而数据结构没变时，**不要**动它，否则会平白触发一次数据迁移。
 
 开发历史：
 
@@ -187,8 +197,10 @@ git archive HEAD | tar -x -C /tmp/kc-check
 * 其后陆续新增：战果记录补录、首页卡片布局、周期查询页、归档分页与筛选、
   月度比较可选数据项、归档覆盖保护、定期导出提醒、任务进度节点、
   战果记录页双录入模式（列表 / 日历）。
-* `v0.2.0` —— 接入 poi 战果插件数据：每日建议值与一键填充、战果线对比图、
+* `v0.2.0`（`c517a4f`）—— 接入 poi 战果插件数据：每日建议值与一键填充、战果线对比图、
   EO 完成状态批量同步、快照管理。
+* `v0.3.0` —— 新增程序版本号载体 `js/core/version.js`，并在「设置 → 关于」中展示
+  程序版本与数据结构版本；清理源码中指向已移除文档的注释。
 
 ---
 

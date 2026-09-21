@@ -104,7 +104,6 @@
   function statusCards() {
     const st = KC.store.getSaveStatus();
     const state = st.status || 'idle';
-    const cfg = KC.store.state.config || {};
 
     const counts = {
       dailyRecords: KC.store.state.dailyRecords.length,
@@ -122,7 +121,7 @@
         st.at ? '最后保存 ' + formatDateTime(new Date(st.at).toISOString()) : '尚未写入',
         state === 'error' ? 'purple' : 'green') +
       KC.ui.statCard('存储引擎', 'IndexedDB',
-        '库 kc-senka-planner · v' + (cfg.schemaVersion || KC.schema.SCHEMA_VERSION), '') +
+        '库 kc-senka-planner · v' + KC.schema.dataVersion(KC.store.state.config), '') +
       KC.ui.statCard('已用空间',
         storage ? formatBytes(storage.usage) : '不可用',
         storage ? '配额 ' + formatBytes(storage.quota) : '浏览器未提供容量信息', '') +
@@ -147,7 +146,8 @@
 
     return '<div class="panel">' +
       '<div class="panel-head"><h2>数据概览</h2>' +
-        '<span class="panel-count">数据结构版本 v' + (cfg.schemaVersion || KC.schema.SCHEMA_VERSION) +
+        '<span class="panel-count">数据结构版本 v' +
+        KC.schema.dataVersion(KC.store.state.config) +
         ' · 创建于 ' + formatDateTime(cfg.createdAt) + '</span></div>' +
       '<div class="table-wrap"><table class="data-table detail-table">' +
         '<thead><tr><th>数据表</th><th class="num">条数</th></tr></thead>' +

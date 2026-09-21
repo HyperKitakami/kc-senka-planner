@@ -1514,7 +1514,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .alert-info { background: var(--primary-soft); border-color: var(--alert-info-border); color: var(--alert-info-text); }
 
 /* --------------------------------------------------------------------------
-   首页「定期导出提醒」条（docs/07_implementation.md §3.4）
+   首页「定期导出提醒」条
    -------------------------------------------------------------------------- */
 
 .export-notice {

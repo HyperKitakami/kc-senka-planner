@@ -4,7 +4,7 @@
 
    覆盖 docs 列出的五类配置：外观、首页显示内容、默认规划方式、数据相关设置、其它偏好。
    另含「游戏服务器」（用于自动生成历史归档的人事表地址）
-   与「数据导出提醒」（docs/07_implementation.md §3.1）。
+   与「数据导出提醒」。
    设置只影响展示与默认值，**不影响任何历史数据**。
    ========================================================================== */
 (function (KC) {
@@ -194,7 +194,7 @@
   }
 
   /**
-   * 数据导出提醒（docs/07_implementation.md §3.1 / §3.4）。
+   * 数据导出提醒。
    * 提醒周期存在 settings.exportRemindMode；"上次已提醒的周期 id" 存在本机轻量存储，
    * 因此这里既能选周期，也能把当前周期的提醒状态说清楚（必要时可重新开启）。
    */
@@ -305,7 +305,6 @@
     const settings = KC.store.getSettings();
 
     const rows = [
-      ['数据结构版本', 'v' + ((st.config && st.config.schemaVersion) || KC.schema.SCHEMA_VERSION)],
       ['存储方式', 'IndexedDB · kc-senka-planner（本机浏览器）'],
       ['每日记录', st.dailyRecords.length + ' 条'],
       ['任务模板 / 任务记录', st.taskTemplates.length + ' 个 / ' + st.taskRecords.length + ' 条'],
@@ -332,6 +331,11 @@
       '<div class="panel-head"><h2>关于</h2></div>' +
       '<p class="panel-desc">Kancolle Senka Planner —— 完全本地运行的《艦隊これくしょん》战果记录、规划与统计工具。' +
         '无需服务器、无需数据库，双击 <code>index.html</code> 即可离线使用。</p>' +
+      '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
+        '<tr><td>程序版本</td><td>' + U.escapeHtml(KC.VERSION || '未知') + '</td></tr>' +
+        '<tr><td>数据结构版本</td><td>v' +
+          U.escapeHtml(String(KC.schema.dataVersion(KC.store.state.config))) + '</td></tr>' +
+      '</tbody></table></div>' +
       '<p class="form-hint">数据默认保存在本机浏览器中。浏览器清理站点数据会一并清除，请定期在「数据管理」中导出 JSON 备份。' +
         '图表由本地引入的 Chart.js 渲染，程序自身不访问任何外部网络；' +
         '只有你主动点击「历史归档」里的人事表链接时，浏览器才会去游戏官方服务器取图。</p>' +

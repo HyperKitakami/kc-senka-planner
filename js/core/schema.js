@@ -171,7 +171,7 @@
     /** 最近一次导出数据的时间（仅作提醒，便于用户判断备份是否过期） */
     lastExportAt: null,
     /**
-     * 数据导出提醒周期（docs/07_implementation.md §3.1）：
+     * 数据导出提醒周期：
      *   'month'   按出击战果归属月（本月末日 21:00 切换）
      *   'quarter' 按季度任务归属季（任务口径末日 13:00 归属）
      *   'off'     关闭
@@ -191,6 +191,22 @@
       createdAt: now,
       updatedAt: now
     };
+  }
+
+  /**
+   * 库内 config 记录的数据结构版本号（UI 展示与「是否需要补盖版本号」的唯一口径）。
+   *
+   * ⚠️ config.schemaVersion 由 createConfig() 在**首次运行**时写入，此后一直停留在那一刻的
+   *    SCHEMA_VERSION。程序升级后老库不会自动跟着变，于是出现「库内是 v1、程序是 v2」的错位。
+   *    另外，新增**可选字段**（如任务进度 steps / stepProgress）按约定刻意不升 SCHEMA_VERSION，
+   *    这些老库同样停在旧号上。
+   *    ⇒ 读取时一律取 max(库内, 程序)：二者不同说明该库尚未补盖，展示上以程序为准。
+   *
+   * @param {object} [config] KC.store.state.config
+   */
+  function dataVersion(config) {
+    const stored = Number(config && config.schemaVersion);
+    return Math.max(Number.isFinite(stored) ? stored : 0, SCHEMA_VERSION);
   }
 
   /**
@@ -350,6 +366,8 @@
     CONFIG_KEY: CONFIG_KEY,
     SETTINGS_KEY: SETTINGS_KEY,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    createConfig: createConfig,
+    dataVersion: dataVersion,
     /** 任务组（docs/06_data_strategy.md §1.3） */
     TASK_GROUPS: ['EO', 'EX', 'EVENT', 'USER'],
     /** 周期类型（docs/03_data.md §六） */

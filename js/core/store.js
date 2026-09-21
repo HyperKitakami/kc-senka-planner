@@ -74,6 +74,13 @@
     if (!state.config) {
       state.config = KC.schema.createConfig();
       writes.push(KC.db.put('config', state.config));
+    } else if (Number(state.config.schemaVersion) < KC.schema.SCHEMA_VERSION) {
+      // 补盖版本号：老库的 config.schemaVersion 停在首次运行那一刻，程序升级后不会自动跟着变
+      // （新增**可选字段**按约定刻意不升 SCHEMA_VERSION，这些库同样停在旧号上）。
+      // 本库的结构升级由 db.js 的 IndexedDB versionchange 事务完成，这里只把版本号写正，
+      // **不搬运任何数据**。只前进不回退：高于当前程序的库不在此处理（导入时会先被 migrate 拦下）。
+      state.config.schemaVersion = KC.schema.SCHEMA_VERSION;
+      writes.push(KC.db.put('config', state.config));
     }
     if (!state.settings) {
       state.settings = Object.assign({}, KC.schema.DEFAULT_SETTINGS);
@@ -793,6 +800,9 @@
     try {
       await KC.db.replaceAll(result.data);
       await loadAll();
+      // 旧版本文件迁移上来后，其 config.schemaVersion 仍是文件里那个旧号
+      // （migrate 只搬数据、不写版本号），这里补盖成当前版本，避免导入后版本显示倒退。
+      if (state.config) state.config.schemaVersion = KC.schema.SCHEMA_VERSION;
       await touchConfig();
       setSaveStatus('saved');
     } catch (err) {

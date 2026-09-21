@@ -1,6 +1,5 @@
 /* ==========================================================================
    calc/reminder.js — 导出提醒：周期 id 计算 + 提醒状态判定
-   依据 docs/07_implementation.md §3.2 / §3.3。
 
    本模块是**纯函数模块，不做任何 IO**：
      · 不读设置 —— settings / lastExportAt / "上次已提醒的周期 id" 全部由调用方传入；
@@ -126,7 +125,7 @@
   /**
    * 提醒状态判定（纯函数，全部输入显式传入）。
    *
-   * 判定流程（docs/07_implementation.md §3.3）：
+   * 判定流程：
    *   1. mode === 'off' → 不显示
    *   2. 本周期已提醒过（remindedCycleId === cycleId）→ 不显示
    *   3. 从未导出（或 lastExportAt 非法）→ 显示，level 'info'
