@@ -97,6 +97,22 @@
     if (!state.taskTemplates.length && KC.defaultTasks) {
       state.taskTemplates = KC.defaultTasks.createDefaultTemplates();
       writes.push(KC.db.putMany('taskTemplates', state.taskTemplates));
+    } else if (KC.defaultTasks && KC.defaultTasks.mergeSystemTemplates) {
+      // 已有库：① 补装程序升级后**新增**的内置任务（如 EX 预设任务）；
+      // ② 给**已存在**的内置任务补缺失的展示字段（如 EX 新增的 fullName —— 老库只有简称，
+      //    不补的话卡片会一直显示简略名）。用户可改的字段（enabled / 战果 / 节点）不在补写名单里。
+      // 详见 defaultTasks.mergeSystemTemplates 与 PATCHABLE_FIELDS。
+      const res = KC.defaultTasks.mergeSystemTemplates(state.taskTemplates);
+      if (res && res.list && res.list !== state.taskTemplates) {
+        // ⚠️ 只写回**被改动的**记录（res.changedIds），不整表重写 ——
+        // 否则会把未变化的内置任务也重写一遍（多余 IO，且不必要地触碰用户数据）。
+        // 注意要写 res.list 里补好字段的**那份对象**，不能写旧对象。
+        const changed = res.list.filter(function (t) {
+          return t && res.changedIds[t.id];
+        });
+        state.taskTemplates = res.list;
+        if (changed.length) writes.push(KC.db.putMany('taskTemplates', changed));
+      }
     }
 
     if (writes.length) await Promise.all(writes);
@@ -245,6 +261,15 @@
     if (resetCycle === 'EVENT') {
       next.eventPeriodId = String((input && input.eventPeriodId) || '').trim();
     }
+    // poi 侧任务名（可选字段）：只给内置 EX 预设任务用，用来对齐 poi 的 zName。
+    // 没有就**不写这个键**（与 steps 同口径），避免在导出数据里塞一堆 null。
+    // ⚠️ 用户自建任务不带这个字段，因此天然不参与 poi 同步。
+    const poiName = String((input && input.poiName) || '').trim();
+    if (poiName) next.poiName = poiName;
+    // 游戏内完整任务名（可选字段）：内置 EX 预设任务带，用作名称列的悬停提示。
+    // 同样是「有值才写键」。用户自建任务不写，UI 需容忍缺省。
+    const fullName = String((input && input.fullName) || '').trim();
+    if (fullName) next.fullName = fullName;
     // 任务进度节点（可选字段）：无有效步骤时不写这个键，
     // 使"缺失 = 无节点任务"的语义保持干净（见 schema.js 任务进度说明）。
     // 系统任务走的是另一条分支（仅允许改 enabled），因此不会被这里覆盖进度配置。

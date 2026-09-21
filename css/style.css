@@ -1477,6 +1477,52 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-size: 12.5px;
 }
 
+/* -------------------------------------------------------------- 预设 EX 任务卡片 */
+
+/* EX 卡片内的 poi 季常同步区：与上方说明、下方表格各留一段间距 */
+#task-ex-card .poi-diff-block {
+  margin-bottom: 14px;
+}
+
+/* 同步区里的「批量勾选」按钮行：与 EO 面板同口径（按钮在左、状态说明靠右） */
+#task-ex-card .poi-diff-block .panel-foot {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+#task-ex-card .poi-diff-block .poi-status-line {
+  margin: 0;
+  font-weight: 400;
+  font-size: 12.5px;
+}
+
+/* 状态说明单独成行时（没有待勾选项）留一点上间距 */
+#task-ex-card .poi-diff-block > .poi-status-line {
+  margin-top: 8px;
+}
+
+/* EX 卡片任务名列显示游戏内完整任务名（如「Bq2 戦果拡張任務！「Z作戦」前段作戦」），
+   比 EO 的海域代号长得多 ⇒ 主动换行，并把表格的优先宽度让给它，
+   避免把后面的战果值 / 操作列挤到折行。行高用 1.35 保持紧凑可读。 */
+#task-ex-card .task-table .cell-name {
+  min-width: 260px;
+  white-space: normal;
+}
+
+#task-ex-card .task-table .task-name-text {
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+/* 同步区里的 EX 完整名称同样允许换行（EO 的海域代号不会触发） */
+#task-ex-card .poi-diff-block .poi-eo-name {
+  white-space: normal;
+  line-height: 1.35;
+}
+
 .panel-foot {
   margin-top: 14px;
   padding-top: 12px;

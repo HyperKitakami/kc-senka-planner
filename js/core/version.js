@@ -15,7 +15,7 @@
   'use strict';
 
   /** 程序版本，形如 v0.3.0（与 README 的「## 版本」段、git tag 保持一致）。 */
-  var VERSION = 'v0.3.0';
+  var VERSION = 'v0.3.1';
 
   /** 去掉前导 v 的版本号，便于需要纯数字形式的场合。 */
   var VERSION_NUM = VERSION.replace(/^v/, '');

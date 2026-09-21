@@ -38,6 +38,17 @@
     USER: '用户自定义'
   };
 
+  /**
+   * 「预设 EX 任务」卡片：只收纳**内置**的 EX 任务（`isSystem`）。
+   * 用户自建的 EX 任务仍留在普通分组卡片里，避免两个卡片抢同一批数据 ——
+   * 内置任务不可编辑（系统任务口径），与普通卡片混排会显得很别扭。
+   */
+  const EX_CARD_TITLE = '预设 EX 任务';
+  const EX_CARD_HINT = '固定任务战果（季常 / 年常）。季常可经 poi 季常清单批量勾选；' +
+    '年常在 poi 数据里没有完成标记，需手动勾选。';
+  const EX_CARD_UNKNOWN =
+    '以下 poi 季常项在本工具里找不到对应任务（可能已被停用或删除），本次不会处理。';
+
   const pageState = {
     container: null,
     formOpen: false,
@@ -257,6 +268,13 @@
     host.innerHTML = poiPanel();
   }
 
+  /** 「预设 EX 任务」卡片里的 poi 季常同步区 */
+  function renderPoiExSlot() {
+    const host = slot('task-ex-poi-slot');
+    if (!host) return;
+    host.innerHTML = poiExPanel();
+  }
+
   /** 当前归属月的 poi EO 差异（无快照返回 null） */
   function poiDiff() {
     return KC.poiData.eoDiff(
@@ -266,6 +284,34 @@
       KC.calc.tasks.readRecord,
       new Date()
     );
+  }
+
+  /** 当前归属月的 poi 季常（EX）差异（无快照返回 null） */
+  function poiExDiff() {
+    return KC.poiData.exDiff(
+      planningMonth(),
+      KC.store.state.taskTemplates,
+      KC.store.state.taskRecords,
+      KC.calc.tasks.readRecord,
+      new Date()
+    );
+  }
+
+  /**
+   * 同步差异列表（EO 与 EX 共用）。
+   * @param {Array} list 差异行
+   * @param {string} mark 左侧角标文案
+   */
+  function poiDiffRows(list, mark) {
+    return list.map(function (r) {
+      // EX 差异行的显示名跟卡片里保持一致（完整名称）；EO 仍用海域代号。
+      const label = (r.taskGroup === 'EX' && r.fullName) ? r.fullName : (r.code || r.name);
+      const tip = (r.taskGroup === 'EX' && r.fullName && r.name) ? r.name : '';
+      return '<li><span class="poi-chip-badge">' + mark + '</span>' +
+        '<span class="poi-eo-name"' + (tip ? ' title="' + U.escapeHtml(tip) + '"' : '') + '>' +
+        U.escapeHtml(label) + '</span>' +
+        '<span class="poi-eo-senka">' + U.formatNumber(r.senka) + '</span></li>';
+    }).join('');
   }
 
   /**
@@ -292,14 +338,6 @@
     const c = diff.counts;
     const nothing = c.done === 0 && c.undone === 0;
 
-    const rows = function (list, mark) {
-      return list.map(function (r) {
-        return '<li><span class="poi-chip-badge">' + mark + '</span>' +
-          '<span class="poi-eo-name">' + U.escapeHtml(r.code) + '</span>' +
-          '<span class="poi-eo-senka">' + U.formatNumber(r.senka) + '</span></li>';
-      }).join('');
-    };
-
     let body;
     if (nothing) {
       body = '<div class="empty-inline">poi 与本工具记录的 EO 完成状态一致，无需同步。</div>';
@@ -307,11 +345,11 @@
       body = '<div class="poi-diff">' +
         (c.done
           ? '<div class="poi-diff-block"><div class="poi-diff-head">poi 已完成，本工具未勾选（' +
-              c.done + ' 项）</div><ul class="poi-eo-list">' + rows(diff.done, '待勾选') + '</ul></div>'
+              c.done + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.done, '待勾选') + '</ul></div>'
           : '') +
         (c.undone
           ? '<div class="poi-diff-block"><div class="poi-diff-head">本工具已勾选，poi 显示未完成（' +
-              c.undone + ' 项）</div><ul class="poi-eo-list">' + rows(diff.undone, '仅提示') + '</ul>' +
+              c.undone + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.undone, '仅提示') + '</ul>' +
               '<p class="form-hint">poi 只反映「当前血条是否还在」。这些任务本工具已标记完成，' +
               '可能已计入战果归属 —— 不会自动取消，请自行确认后手动处理。</p></div>'
           : '') +
@@ -381,6 +419,114 @@
       KC.toast(err.message, 'error');
     }
     renderPoiSlot();
+  }
+
+  /* ----------------------------------------- poi 季常（EX）批量同步 */
+
+  /**
+   * poi 季常同步区（「预设 EX 任务」卡片内）。
+   *
+   * 与 EO 面板同口径：**只正向勾选，绝不自动取消**。
+   * 数据来自 poi 的 `zName` / `zcleartslist`，只覆盖季常 ——
+   * 年常（AL / 机动）在 poi 数据里没有对应字段，只能手动勾选。
+   */
+  function poiExPanel() {
+    const diff = poiExDiff();
+    const month = planningMonth();
+
+    if (!diff) {
+      return '<div class="poi-diff-block">' +
+        '<div class="poi-diff-head">poi 季常同步</div>' +
+        '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
+          ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
+          U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选季常任务。</p>' +
+        '</div>';
+    }
+
+    const c = diff.counts;
+    const nothing = c.done === 0 && c.undone === 0;
+
+    let body;
+    if (nothing) {
+      body = '<div class="empty-inline">poi 与本工具记录的季常完成状态一致，无需同步。</div>';
+    } else {
+      body = '<div class="poi-diff">' +
+        (c.done
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">poi 已完成，本工具未勾选（' +
+              c.done + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.done, '待勾选') + '</ul></div>'
+          : '') +
+        (c.undone
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">本工具已勾选，poi 显示未完成（' +
+              c.undone + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.undone, '仅提示') + '</ul>' +
+              '<p class="form-hint">poi 的季常清单是手工维护的，可能尚未更新。这些任务本工具已标记完成，' +
+              '可能已计入战果归属 —— 不会自动取消，请自行确认后手动处理。</p></div>'
+          : '') +
+        '</div>';
+    }
+
+    const stat = '共 ' + diff.same.length + ' 项状态一致' +
+      (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') +
+      (diff.syncedAt ? ' · 快照同步于 ' + U.escapeHtml(fmtDateTime(new Date(diff.syncedAt))) : '');
+
+    return '<div class="poi-diff-block">' +
+      '<div class="poi-diff-head">poi 季常同步 · ' + U.escapeHtml(U.monthLabel(month)) + '</div>' +
+      body +
+      (c.done
+        ? '<div class="panel-foot">' +
+            '<button type="button" class="btn btn-primary" data-act="poi-ex-sync">' +
+              '批量勾选 ' + c.done + ' 项季常任务</button>' +
+            '<span class="poi-status-line">' + stat + '</span>' +
+          '</div>'
+        : '<p class="poi-status-line">' + stat + '</p>') +
+      '<p class="form-hint">数据来自 poi 的季常任务清单（<code>zName</code> / <code>zcleartslist</code>），' +
+        '仅覆盖季常；年常（AL / 机动）poi 未提供完成标记，请在下方列表手动勾选。' +
+        '快照存于本机轻量存储，不参与导入导出。</p>' +
+      '</div>';
+  }
+
+  /** 批量勾选季常（EX）任务：确认 → 批量写入 → 提示 */
+  async function handlePoiExSync() {
+    const diff = poiExDiff();
+    if (!diff || !diff.counts.done) return;
+
+    const month = planningMonth();
+    const total = U.round2(diff.done.reduce(function (s, r) { return s + r.senka; }, 0));
+    const preview = diff.done.slice(0, 8).map(function (r) {
+      return '  · ' + (r.fullName || r.name) + '  ' + U.formatNumber(r.senka);
+    }).join('\n');
+
+    const ok = await KC.confirmDialog({
+      title: '批量勾选季常任务',
+      message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项季常任务标记为已完成' +
+        '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
+        (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
+        '\n\n依据是 poi 的季常任务清单。已有进度节点的任务会保留其进度；' +
+        '勾选后仍可逐项取消完成。季常战果有末日 13:00 归属边界，' +
+        '在季度第三月此时勾选会直接失效。',
+      okText: '勾选 ' + diff.done.length + ' 项'
+    });
+    if (!ok) return;
+
+    // 补录历史月时，完成时刻要落在目标归属月内（否则战果会被算到当前月）
+    const items = diff.done.map(function (r) {
+      return {
+        templateId: r.template.id,
+        periodId: r.period.id,
+        completedAt: backfillAt(month, r.period)
+      };
+    });
+
+    try {
+      const res = await KC.store.setTasksCompletedBatch(items);
+      if (res.failed.length) {
+        KC.toast('已勾选 ' + res.ok + ' 项，' + res.failed.length + ' 项失败。', 'error');
+      } else {
+        KC.toast('已勾选 ' + res.ok + ' 项季常任务', 'ok');
+      }
+    } catch (err) {
+      KC.toast(err.message, 'error');
+    }
+    renderPoiExSlot();
   }
 
   /* -------------------------------------------------------------- 表单 */
@@ -646,12 +792,26 @@
   }
 
   /**
+   * 任务在列表里的显示名。
+   *
+   * 内置 EX 预设任务的 `name` 是简称（Z作战前 / 三川 / 六水戦），
+   * `fullName` 才是游戏内完整任务名（Bq2 戦果拡張任務！「Z作戦」前段作戦）。
+   * 卡片里显示完整名称便于一眼认出是哪条任务，简称则留着做悬停提示，
+   * 免得「三川」这种靠简称才认得出的任务反而找不到。
+   */
+  function displayName(t) {
+    if (t.taskGroup === 'EX' && t.fullName) return { text: t.fullName, tip: t.name };
+    return { text: t.name, tip: '' };
+  }
+
+  /**
    * 任务名单元格。
    * 带节点的任务多一个折叠箭头 + 「进度 n/m」角标；默认折叠（见 pageState.expanded）。
    */
   function nameCell(item) {
     const t = item.template;
     const steps = t.steps || [];
+    const dn = displayName(t);
 
     let toggle = '';
     let badge = '';
@@ -668,8 +828,9 @@
         stat.done + '/' + stat.total + '</span>';
     }
 
-    return '<td class="cell-name">' + toggle + '<span class="task-name-text">' +
-      U.escapeHtml(t.name) + '</span>' +
+    return '<td class="cell-name">' + toggle + '<span class="task-name-text"' +
+      (dn.tip ? ' title="' + U.escapeHtml(dn.tip) + '"' : '') + '>' +
+      U.escapeHtml(dn.text) + '</span>' +
       (t.isSystem ? '<span class="tag tag-sys">系统</span>' : '') +
       (t.enabled === false ? '<span class="tag tag-off">已停用</span>' : '') +
       badge +
@@ -792,6 +953,69 @@
   }
 
   function renderGroup(group, poolSet, month) {
+    // EX 组里内置的那批任务单独成卡片（见 EX_CARD_TITLE）；用户自建的 EX 任务
+    // 继续按普通分组卡片渲染，两处互不重叠。
+    if (group.group === 'EX') {
+      const sys = group.items.filter(function (it) {
+        return !!(it.template && it.template.isSystem);
+      });
+      const rest = group.items.filter(function (it) {
+        return !(it.template && it.template.isSystem);
+      });
+      return (sys.length ? renderExCard(sys, poolSet, month) : '') +
+        (rest.length ? renderGroupCard({
+          group: 'EX', label: group.label, items: rest
+        }, poolSet, month) : '');
+    }
+    return renderGroupCard(group, poolSet, month);
+  }
+
+  /**
+   * 「预设 EX 任务」卡片。
+   *
+   * 位置由 renderList 控制（紧跟 EO 卡片之后），这里只负责内容。
+   * 卡片里额外挂一块 poi 季常同步区 —— 它只服务这批内置季常任务，
+   * 所以跟着卡片走，而不是像 EO 那样单独一个面板（`#task-poi-slot`）。
+   */
+  function renderExCard(items, poolSet, month) {
+    const done = items.filter(function (it) { return it.completed; }).length;
+    const active = items.filter(function (it) { return it.template.enabled !== false; });
+    const earned = U.round2(active.filter(function (it) { return it.completed; })
+      .reduce(function (s, it) { return s + (Number(it.template.senkaValue) || 0); }, 0));
+
+    const diff = poiExDiff();
+    const unknownNote = (diff && diff.unknown.length)
+      ? '<p class="form-hint">' + U.escapeHtml(EX_CARD_UNKNOWN) + '</p>'
+      : '';
+
+    return '<div class="panel" id="task-ex-card">' +
+      '<div class="panel-head">' +
+        '<h2>' + U.escapeHtml(EX_CARD_TITLE) + '</h2>' +
+        '<div class="panel-tools">' +
+          '<span class="panel-count">已完成 ' + done + ' / ' + items.length +
+            ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="1">全选规划</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="0">取消全选</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="form-hint">' + U.escapeHtml(EX_CARD_HINT) + '</p>' +
+      '<div id="task-ex-poi-slot">' + poiExPanel() + '</div>' +
+      unknownNote +
+      '<div class="table-wrap"><table class="data-table task-table">' +
+        '<thead><tr>' +
+          '<th class="cell-check">完成</th>' +
+          '<th>任务</th>' +
+          '<th class="col-senka">战果值</th>' +
+          '<th>当前周期</th>' +
+          '<th class="cell-check">参与规划</th>' +
+          '<th class="actions">操作</th>' +
+        '</tr></thead>' +
+        '<tbody>' + items.map(function (it) { return renderRow(it, poolSet, month); }).join('') + '</tbody>' +
+      '</table></div>' +
+      '</div>';
+  }
+
+  function renderGroupCard(group, poolSet, month) {
     const done = group.items.filter(function (it) { return it.completed; }).length;
     const active = group.items.filter(function (it) { return it.template.enabled !== false; });
     const earned = U.round2(active.filter(function (it) { return it.completed; })
@@ -858,8 +1082,20 @@
       return;
     }
 
+    // 「预设 EX 任务」卡片紧跟 EO 卡片之后（其余分组保持原顺序）。
+    // groups 来自 groupItems，顺序与 GROUP_ORDER 一致（EO → EX → …），
+    // 这里把 EX 提到第 2 位，同时保证它在 EO 卡片存在时**一定**紧随其后。
+    const ordered = [];
+    const exGroup = groups.filter(function (g) { return g.group === 'EX'; })[0];
+    groups.forEach(function (g) {
+      if (g.group === 'EX') return;
+      ordered.push(g);
+      if (g.group === 'EO' && exGroup) ordered.push(exGroup);
+    });
+    if (exGroup && ordered.indexOf(exGroup) < 0) ordered.push(exGroup);
+
     host.innerHTML = toolbar +
-      groups.map(function (g) { return renderGroup(g, view.poolSet, month); }).join('');
+      ordered.map(function (g) { return renderGroup(g, view.poolSet, month); }).join('');
   }
 
   /* -------------------------------------------------------------- 交互 */
@@ -1167,6 +1403,8 @@
       clearPool();
     } else if (act === 'poi-eo-sync') {
       handlePoiEoSync();
+    } else if (act === 'poi-ex-sync') {
+      handlePoiExSync();
     } else if (act === 'prev-month') {
       switchMonth(U.addMonths(planningMonth(), -1));
     } else if (act === 'next-month') {
@@ -1240,6 +1478,7 @@
         if (type !== 'change') return;
         renderSummary();
         renderPoiSlot();
+        // EX 的 poi 同步区挂在列表里的「预设 EX 任务」卡片内，随 renderList 一起刷新
         renderList();
         if (pageState.formOpen) renderForm();
       });

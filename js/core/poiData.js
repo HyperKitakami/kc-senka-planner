@@ -550,6 +550,94 @@
     };
   }
 
+  /**
+   * 把 poi 的**季常任务战果**完成状态与本工具的任务记录做差异对比。
+   *
+   * 数据来源：poi 的 `zName` / `zValue` / `zcleartslist`（同序的三张表），
+   * `zcleartslist[i] === 0` 表示第 i 项已完成。**只有季常**能这么同步 ——
+   * 年常在 poi 数据里没有对应字段（`poiName: null`），因此只比对带 `poiName`
+   * 且 `resetCycle === 'QUARTERLY'` 的 EX 模板。
+   *
+   * 与 `eoDiff` 的关键差别：poi 这里给的是**已完成清单**（而不是未完成清单），
+   * 且清单本身就是我们关心的全集，所以「poi 里有、模板里没有」的名字直接忽略，
+   * 不会进 `unknown`（poi 的清单纯人工维护，可能含本工具不打算跟踪的任务）。
+   *
+   * ⚠️ **不自动写入**：季常战果有末日 13:00 归属边界与"季度第三月 13:00 后失效"规则，
+   * 是否按 poi 改状态由用户决定 —— 本函数只算差异。**也不自动取消**（只正向勾选），
+   * 理由同 eoDiff：会抹掉已计入历史的战果。
+   *
+   * @param {string} monthKeyStr 'YYYY-MM'（要同步的归属月）
+   * @param {Array} templates 任务模板（KC.store.state.taskTemplates）
+   * @param {Array} records   任务记录（KC.store.state.taskRecords）
+   * @param {Function} readRecord KC.calc.tasks.readRecord
+   * @param {Date} [now]
+   * @returns {null|{month:string, syncedAt:string, done:Array, undone:Array, same:Array,
+   *                 unknown:Array, counts:{done:number,undone:number,same:number}}}
+   *   null = 该月没有 poi 快照
+   */
+  function exDiff(monthKeyStr, templates, records, readRecord, now) {
+    const snap = readSnapshot(monthKeyStr);
+    if (!snap || !snap.data) return null;
+
+    const at = now || new Date();
+    const list = Array.isArray(templates) ? templates : [];
+    const recs = Array.isArray(records) ? records : [];
+
+    // 只有季常可同步：年常在 poi 侧无字段 ⇒ 模板 poiName 为 null
+    const exTemplates = list.filter(function (t) {
+      return t && t.taskGroup === 'EX' && t.enabled !== false &&
+        t.resetCycle === 'QUARTERLY' && t.poiName;
+    });
+
+    const quest = KC.poiSource.extraQuestStatus(snap.data);
+    const byName = {};
+    quest.list.forEach(function (q) { byName[q.name] = q; });
+
+    const done = [], undone = [], same = [], unknown = [];
+
+    exTemplates.forEach(function (t) {
+      const poiName = String(t.poiName);
+      const period = KC.calc.tasks.periodForMonth(t, monthKeyStr, at);
+      if (!period || !period.id) { unknown.push({ template: t, name: poiName }); return; }
+
+      const rec = typeof readRecord === 'function'
+        ? readRecord([], recs, t, period.id, at)
+        : null;
+      const mine = !!(rec && rec.completed);
+
+      // 快照里没这一项 ⇒ 无法判定，只提示、不猜
+      const q = byName[poiName];
+      if (!q) { unknown.push({ template: t, name: poiName }); return; }
+      const poiDone = !!q.done;
+
+      const row = {
+        template: t,
+        // 展示用：UI 用 fullName 显示完整任务名、name 作悬停简称（与卡片一致）
+        taskGroup: 'EX',
+        name: t.name,
+        fullName: t.fullName || '',
+        poiName: poiName,
+        period: period,
+        mine: mine,
+        poiDone: poiDone,
+        senka: Number(t.senkaValue) || 0
+      };
+      if (poiDone && !mine) done.push(row);
+      else if (!poiDone && mine) undone.push(row);
+      else same.push(row);
+    });
+
+    return {
+      month: String(monthKeyStr),
+      syncedAt: snap.syncedAt || '',
+      done: done,
+      undone: undone,
+      same: same,
+      unknown: unknown,
+      counts: { done: done.length, undone: undone.length, same: same.length }
+    };
+  }
+
   KC.poiData = {
     SNAP_PREFIX: SNAP_PREFIX,
     META_KEY: META_KEY,
@@ -579,6 +667,7 @@
     eoStatusOf: eoStatusOf,
     monthDays: monthDays,
     chartData: chartData,
-    eoDiff: eoDiff
+    eoDiff: eoDiff,
+    exDiff: exDiff
   };
 })(window.KC = window.KC || {});
