@@ -5,7 +5,8 @@
 
    职责（原则上不放置业务功能）：
      · 自动保存状态、存储引擎与数据量概览
-     · 导出全部数据（JSON，含 schemaVersion）
+     · 导出全部数据（JSON，含 schemaVersion）—— 动作本身在 js/ui/export.js，
+       与首页的导出提醒条共用同一份实现
      · 导入数据：先校验版本 → 依次迁移 → 显式确认 → 整体替换；失败不静默、不改动现有数据
      · 本地备份：建立多份快照、随时恢复
      · 清空业务数据（保留用户设置与本地备份）
@@ -70,18 +71,6 @@
 
   function slot(id) {
     return pageState.container ? pageState.container.querySelector('#' + id) : null;
-  }
-
-  function downloadJson(filename, obj) {
-    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
   /* ---------------------------------------------------------- 异步加载 */
@@ -475,19 +464,6 @@
 
   /* -------------------------------------------------------------- 操作 */
 
-  async function doExport() {
-    try {
-      const payload = await KC.store.exportAll();
-      const d = new Date();
-      const name = 'kc-senka-planner_' + U.toDateKey(d) + '_' +
-        U.pad2(d.getHours()) + U.pad2(d.getMinutes()) + '.json';
-      downloadJson(name, payload);
-      KC.toast('已导出 ' + name, 'ok');
-    } catch (err) {
-      KC.toast('导出失败：' + err.message, 'error');
-    }
-  }
-
   async function doCreateBackup() {
     try {
       const record = await KC.store.createBackup(pageState.backupName);
@@ -563,7 +539,7 @@
     if (!btn) return;
     const act = btn.dataset.act;
 
-    if (act === 'export') doExport();
+    if (act === 'export') KC.ui.export.exportData();
     else if (act === 'create-backup') doCreateBackup();
     else if (act === 'restore-backup') doRestoreBackup(btn.dataset.id);
     else if (act === 'delete-backup') doDeleteBackup(btn.dataset.id);

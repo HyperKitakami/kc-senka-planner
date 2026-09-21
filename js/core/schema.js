@@ -169,7 +169,18 @@
      */
     server: null,
     /** 最近一次导出数据的时间（仅作提醒，便于用户判断备份是否过期） */
-    lastExportAt: null
+    lastExportAt: null,
+    /**
+     * 数据导出提醒周期（docs/07_implementation.md §3.1）：
+     *   'month'   按出击战果归属月（本月末日 21:00 切换）
+     *   'quarter' 按季度任务归属季（任务口径末日 13:00 归属）
+     *   'off'     关闭
+     * 可选字段，按 planningPool 的先例不触发版本升级。
+     *
+     * ⚠️ 「上次已提醒 / 已导出的周期 id」**不放这里** —— 它是纯 UI 状态，
+     *    存在本机轻量存储（kc-senka-planner:exportRemind），不该进导出文件。
+     */
+    exportRemindMode: 'month'
   };
 
   function createConfig() {

@@ -3,7 +3,8 @@
    依据 docs/02_ui.md §4.9、docs/03_data.md Settings。
 
    覆盖 docs 列出的五类配置：外观、首页显示内容、默认规划方式、数据相关设置、其它偏好。
-   另含「游戏服务器」（用于自动生成历史归档的人事表地址）。
+   另含「游戏服务器」（用于自动生成历史归档的人事表地址）
+   与「数据导出提醒」（docs/07_implementation.md §3.1）。
    设置只影响展示与默认值，**不影响任何历史数据**。
    ========================================================================== */
 (function (KC) {
@@ -192,6 +193,63 @@
       '</div>';
   }
 
+  /**
+   * 数据导出提醒（docs/07_implementation.md §3.1 / §3.4）。
+   * 提醒周期存在 settings.exportRemindMode；"上次已提醒的周期 id" 存在本机轻量存储，
+   * 因此这里既能选周期，也能把当前周期的提醒状态说清楚（必要时可重新开启）。
+   */
+  function exportRemindPanel() {
+    const settings = KC.store.getSettings();
+    const R = KC.calc.reminder;
+    const mode = R.normalizeMode(settings.exportRemindMode);
+    const now = new Date();
+    const cycleId = R.remindCycleId(mode, now);
+    const notice = KC.ui.export.reminderState(now);
+
+    const hit = R.MODE_OPTIONS.filter(function (o) { return o.value === mode; })[0];
+    const status = mode === 'off' ? '提醒已关闭'
+      : notice.show ? '待提醒（' + cycleId + '）'
+      : '本周期（' + cycleId + '）已处理，不再提醒';
+    // 只有"本周期被显式标记过已处理"才给恢复入口；
+    // overdueCycles === 0（本周期内刚导出过）不该出现这个按钮。
+    const dismissed = !!cycleId && KC.ui.export.remindedCycleId() === cycleId;
+
+    const rows = [
+      ['最近导出', settings.lastExportAt ? fmtDateTime(settings.lastExportAt) : '尚未导出过'],
+      ['当前周期', cycleId || '—'],
+      ['提醒状态', status]
+    ];
+
+    return '<div class="panel">' +
+      '<div class="panel-head"><h2>数据导出提醒</h2>' +
+        '<span class="panel-count">提醒条显示在首页顶部</span></div>' +
+      '<p class="panel-desc">数据只保存在本机浏览器里，浏览器清理站点数据就会一并丢失。' +
+        '按你选择的周期，首页顶部会提示把数据导出成文件；' +
+        '<strong>「本地备份」不算导出</strong>，它和主数据存在同一处，会被一起清掉。</p>' +
+
+      '<div class="mode-row">' +
+        '<span class="field-label">提醒周期</span>' +
+        segmented('set-export-remind', R.MODE_OPTIONS, mode, 'mode') +
+      '</div>' +
+      '<p class="form-hint">' + U.escapeHtml((hit && hit.hint) || '') + '</p>' +
+
+      '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
+        rows.map(function (r) {
+          return '<tr><td>' + U.escapeHtml(r[0]) + '</td><td>' + U.escapeHtml(r[1]) + '</td></tr>';
+        }).join('') +
+      '</tbody></table></div>' +
+
+      '<p class="form-hint">在首页点过「本周期不再提醒」后，本周期内不会再出现；' +
+        '该记录只存在本机，换浏览器或清站点数据后自然失效。</p>' +
+      (dismissed
+        ? '<div class="panel-foot">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-act="reset-export-remind">' +
+              '恢复本周期提醒</button>' +
+          '</div>'
+        : '') +
+      '</div>';
+  }
+
   function dataPanel() {
     const st = KC.store.state;
     const settings = KC.store.getSettings();
@@ -245,6 +303,7 @@
       dashboardPanel() +
       planningPanel() +
       serverPanel() +
+      exportRemindPanel() +
       dataPanel() +
       aboutPanel();
   }
@@ -271,6 +330,22 @@
   async function setServer(code) {
     try { await KC.store.saveSettings({ server: code || null }); }
     catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
+  }
+
+  /** 提醒周期：只影响首页提醒条是否出现，不改变任何业务数据 */
+  async function setExportRemindMode(mode) {
+    try {
+      await KC.store.saveSettings({
+        exportRemindMode: KC.calc.reminder.normalizeMode(mode)
+      });
+    } catch (err) { KC.toast('保存失败：' + err.message, 'error'); }
+  }
+
+  /** 清掉本机层里"本周期已提醒"的记录，让首页重新显示提醒条 */
+  function resetExportRemind() {
+    if (KC.ui.export.clearReminded()) KC.toast('本周期提醒已恢复');
+    else KC.toast('本机临时层不可用，无法恢复', 'error');
+    render();
   }
 
   async function toggleCard(id, checked) {
@@ -329,6 +404,8 @@
 
     if (act === 'set-theme') setTheme(btn.dataset.theme);
     else if (act === 'set-mode') setPlanningMode(btn.dataset.mode);
+    else if (act === 'set-export-remind') setExportRemindMode(btn.dataset.mode);
+    else if (act === 'reset-export-remind') resetExportRemind();
     else if (act === 'move-card') moveCard(btn.dataset.id, btn.dataset.dir);
     else if (act === 'set-card-size') setCardSize(btn.dataset.id, btn.dataset.size);
     else if (act === 'reset-card-layout') resetCardLayout();

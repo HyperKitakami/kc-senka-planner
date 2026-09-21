@@ -5,6 +5,8 @@
    定位：总览页，快速了解当前状态，不承担复杂编辑功能。
      · 卡片（Widget）布局，每张卡片展示一种信息
      · 概览级图表：目标进度（三段进度条）+ 最近增长趋势（迷你折线）
+     · 顶部常驻「定期导出提醒」条（docs/07_implementation.md §3.4）：
+       数据只在本机浏览器里，提醒条在未处理前持续显示，而不是"弹一次就消失"
      · 仅提供少量快捷操作，复杂编辑跳转到对应页面
    所有数字均运行时计算，不写入数据库。
 
@@ -706,6 +708,11 @@
         '</div>' +
       '</div>' +
 
+      // 导出提醒条（docs/07_implementation.md §3.4）：**只在首页判断**，
+      // 不放在 main.js 的 boot 阶段 —— saveSettings() 会广播 change，
+      // 若在 router.start 之前调用会打到未挂载的页面上。
+      KC.ui.exportNotice(KC.ui.export.reminderState(now)) +
+
       '<div class="panel">' +
         '<div class="panel-head">' +
           '<h2>战果进度</h2>' +
@@ -726,6 +733,35 @@
     buildToolbar();
   }
 
+  /* -------------------------------------------------------- 导出提醒条 */
+
+  /**
+   * 「立即导出」：导出成功后记下本周期，提醒自然消失。
+   * 只导出、不写别的业务数据；导出失败（exportData 返回 null）时保持原样。
+   */
+  async function exportNow() {
+    const state = KC.ui.export.reminderState(new Date());
+    const name = await KC.ui.export.exportData();
+    if (!name) return;
+    if (state.cycleId) KC.ui.export.markReminded(state.cycleId);
+    render();
+  }
+
+  /**
+   * 「本周期不再提醒」：只写本机轻量存储，不碰任何业务数据。
+   * 本机层不可用时（隐私模式 / 配额满）明确告知"不会被保留"，避免用户误以为已经关掉了。
+   */
+  function dismissExportNotice() {
+    const state = KC.ui.export.reminderState(new Date());
+    if (!state.cycleId) return;
+    if (KC.ui.export.markReminded(state.cycleId)) {
+      KC.toast('本周期不再提醒导出');
+    } else {
+      KC.toast('本机临时层不可用，本次选择不会被保留', 'error');
+    }
+    render();
+  }
+
   /* -------------------------------------------------------------- 交互 */
 
   function handleClick(e) {
@@ -738,6 +774,10 @@
     if (act === 'dash-done') { exitEdit(); return; }
     if (act === 'dash-reset') { resetLayout(); return; }
     if (act === 'set-card-size') { setCardSize(btn.dataset.id, btn.dataset.size); return; }
+
+    if (act === 'export-now') { exportNow(); return; }
+    if (act === 'export-dismiss') { dismissExportNotice(); return; }
+    if (act === 'export-settings') { KC.router.navigate('settings'); return; }
 
     if (act === 'goto-records') KC.router.navigate('records');
     else if (act === 'goto-planning') KC.router.navigate('planning');

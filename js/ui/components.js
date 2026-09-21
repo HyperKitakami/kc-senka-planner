@@ -46,6 +46,47 @@
   }
 
   /**
+   * 定期导出提醒条（docs/07_implementation.md §3.4）。
+   *
+   * 只在首页渲染，且**未处理前持续显示**（不是"弹一次就消失"）——
+   * 数据只在本机浏览器里，浏览器清理站点数据就会一并丢失，
+   * 提醒条本身必须写明"本地备份不算导出"（createBackup() 不写 lastExportAt，
+   * 用户很容易以为"我刚备份过"）。
+   *
+   * 三个动作由首页处理（data-act）：export-now / export-dismiss / export-settings。
+   * 本机轻量存储不可用时额外提示"不会被保留"。
+   *
+   * @param {object} state KC.calc.reminder.exportReminderState 的结果
+   * @returns {string} HTML（无需提醒时返回空串）
+   */
+  function exportNotice(state) {
+    if (!state || !state.show) return '';
+
+    const degraded = !!(KC.localLayer && !KC.localLayer.available());
+    const tone = state.level === 'warn' ? 'alert-warn' : 'alert-info';
+
+    return '<div class="alert ' + tone + ' export-notice">' +
+      '<span class="export-notice-icon" aria-hidden="true">⚠</span>' +
+      '<div class="export-notice-text">' +
+        '<strong>' + U.escapeHtml(state.title) + '</strong>' +
+        '<span>' + U.escapeHtml(state.text) + '</span>' +
+        (degraded
+          ? '<span class="export-notice-degraded">本机临时层不可用（隐私模式或浏览器禁用了本地存储）：' +
+            '「本周期不再提醒」不会被保留。</span>'
+          : '') +
+      '</div>' +
+      '<div class="export-notice-actions">' +
+        '<button type="button" class="btn btn-primary btn-sm" data-act="export-now">' +
+          U.escapeHtml(state.primaryLabel || '立即导出') + '</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="export-dismiss">' +
+          '本周期不再提醒</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="export-settings">' +
+          '去设置</button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  /**
    * 战果进度条（三段：已获得 / 已规划 / 距目标）。
    * 配色统一使用 --senka-actual / --senka-planned / --senka-remaining
    * （docs/04_calculation.md §十三）。
@@ -201,6 +242,7 @@
   KC.ui = {
     statCard: statCard,
     senkaProgress: senkaProgress,
+    exportNotice: exportNotice,
     taskCutoffNotice: taskCutoffNotice,
     remainText: remainText,
     DASHBOARD_CARDS: DASHBOARD_CARDS,
