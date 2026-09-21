@@ -47,6 +47,14 @@
   --senka-inherited: #8b93a7;   /* 继承战果 */
   --senka-task: #128a4d;        /* 任务战果 */
 
+  /* 「战果线对比」四条排名线（poi），由高到低：联合 / 一群 / 二群 / 三群。
+     自己那条用 --accent，与四条线明显区分。 */
+  --rank-1: #c0392b;
+  --rank-2: #b9861b;
+  --rank-3: #2f6fed;
+  --rank-4: #128a4d;
+  --accent: #7a4fd6;
+
   --radius: 12px;
   --radius-sm: 8px;
   --shadow-sm: 0 1px 2px rgba(24, 39, 75, .05);
@@ -109,6 +117,13 @@
   --senka-remaining: #2b323d;
   --senka-inherited: #9aa3b6;
   --senka-task: #45b479;
+
+  /* 「战果线对比」四条排名线：深色主题下整体提亮，保证在深底上可读 */
+  --rank-1: #e06a5c;
+  --rank-2: #d9a445;
+  --rank-3: #4c86f0;
+  --rank-4: #45b479;
+  --accent: #9d87f2;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
   --shadow: 0 1px 2px rgba(0, 0, 0, .30), 0 6px 16px rgba(0, 0, 0, .38);
@@ -1316,6 +1331,152 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .mini-date { font-family: var(--mono); color: var(--text-muted); font-size: 12.5px; }
 .mini-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* --------------------------------------------------------------------------
+   poi 数据同步面板（战果记录页）
+   「手动选文件 → 显示建议值 → 一键填充空白项」两步流程的界面
+   -------------------------------------------------------------------------- */
+
+.poi-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft, transparent);
+}
+
+.poi-path code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.poi-status-line {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.poi-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.poi-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-chip em {
+  font-style: normal;
+  font-weight: 650;
+  color: var(--senka-planned);
+}
+
+/* 面板右上角的「已同步 / 可填充 N 天」角标 */
+#poi-status.is-live {
+  color: var(--senka-task, #128a4d);
+  border-color: currentColor;
+}
+
+/* 日历模式下有建议值、但当天还没记录的格子：数值显示为灰色占位 */
+.cal-cell.has-advice .cal-input::placeholder {
+  color: var(--senka-planned);
+  opacity: 0.65;
+  font-weight: 600;
+}
+
+.cal-cell.has-advice {
+  border-style: dashed;
+}
+
+/* poi EO 批量同步（战果任务页） */
+.poi-diff {
+  display: grid;
+  gap: 14px;
+  margin: 12px 0 0;
+}
+
+.poi-diff-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--panel-soft, transparent);
+}
+
+.poi-diff-head {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.poi-eo-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 5px 14px;
+}
+
+.poi-eo-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.poi-chip-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  background: var(--panel);
+}
+
+.poi-eo-name {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-eo-senka {
+  margin-left: auto;
+  color: var(--senka-planned);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 任务页的同步面板：按钮与状态说明同行，说明靠左 */
+.poi-panel .panel-foot {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.poi-panel .poi-status-line {
+  margin: 0;
+  font-weight: 400;
+  font-size: 12.5px;
+}
+
 .panel-foot {
   margin-top: 14px;
   padding-top: 12px;
@@ -1479,6 +1640,42 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   color: var(--text-faint);
   margin-left: 10px;
   font-size: 12px;
+}
+
+/* 「战果线对比」的图例（折线下方，展示各线当前值） */
+.rank-legend {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px 18px;
+}
+
+.rank-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rank-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  /* 颜色由内联 style 给（各线不同），这里只保证形状 */
+}
+
+.rank-legend em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .row-viewing { background: var(--primary-soft); }

@@ -442,6 +442,68 @@
   }
 
   /**
+   * 批量把若干任务置为已完成 / 取消完成（poi EO 同步用）。
+   *
+   * 为什么单独开一个方法而不是循环调 setTaskCompleted：
+   *   ① 逐条调用会 emit N 次 change ⇒ 任务页重绘 N 次（列表很长时明显卡顿）；
+   *   ② 逐条失败到一半会留下"改了一半"的状态，用户无法判断是否重试。
+   *   这里按「先全部写库、再一次性合并进内存、最后只广播一次」执行：
+   *   任何一条写库失败都不改内存、不广播，调用方拿到 failed 列表后提示即可。
+   *
+   * ⚠️ 只写 completed=true（同步方向是"poi 说完成了 ⇒ 我们也勾上"）。
+   *   反向（poi 说没完成 ⇒ 取消我们的勾选）**不做**，因为 poi 的 rankuex 只反映
+   *   "当前血条在不在"，而战果归属有 21:00 边界 —— 自动取消会把已经计入历史
+   *   归属的战果凭空抹掉，风险太大。UI 只把这类差异列出来提示用户手动作决定。
+   *
+   * @param {Array<{templateId:string, periodId:string, completedAt?:Date|string}>} items
+   * @returns {Promise<{ok:number, failed:Array<{item:object, error:string}>}>}
+   */
+  async function setTasksCompletedBatch(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return { ok: 0, failed: [] };
+
+    const failed = [];
+    const nexts = [];
+
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      const templateId = String(it && it.templateId || '');
+      const periodId = String(it && it.periodId || '');
+      if (!templateId || !periodId) {
+        failed.push({ item: it, error: '缺少 templateId 或 periodId。' });
+        continue;
+      }
+      const existing = getTaskRecord(templateId, periodId);
+      const next = {
+        id: existing ? existing.id : KC.utils.uid('tr'),
+        templateId: templateId,
+        periodId: periodId,
+        completed: true,
+        completedAt: toIso(it.completedAt)
+      };
+      // 保留已有进度：批量勾选不该把用户已经记下的节点进度抹掉
+      const progress = normalizeStepProgress(existing && existing.stepProgress);
+      if (progress) next.stepProgress = progress;
+
+      try {
+        await KC.db.put('taskRecords', next);
+        nexts.push(next);
+      } catch (err) {
+        failed.push({ item: it, error: err.message });
+      }
+    }
+
+    if (nexts.length) {
+      nexts.forEach(function (n) { upsert(state.taskRecords, n, 'id'); });
+      try {
+        await touchConfig();
+      } catch (err) { /* 配置时间戳失败不影响已完成的任务记录 */ }
+      emit('change');
+    }
+    return { ok: nexts.length, failed: failed };
+  }
+
+  /**
    * 设置某任务在指定周期内、某个节点的已达成次数。
    *
    * 只对"任务有对应节点"的调用有意义；次数会被收敛到 0 ～ requiredCount 之间。
@@ -789,6 +851,7 @@
     getTaskRecord: getTaskRecord,
     getCurrentTaskRecord: getCurrentTaskRecord,
     setTaskCompleted: setTaskCompleted,
+    setTasksCompletedBatch: setTasksCompletedBatch,
     setTaskStepProgress: setTaskStepProgress,
     willResetProgressOnUncomplete: willResetProgressOnUncomplete,
     // 规划池

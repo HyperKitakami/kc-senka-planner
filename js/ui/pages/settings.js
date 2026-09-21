@@ -250,6 +250,56 @@
       '</div>';
   }
 
+  /**
+   * poi 数据快照（战果记录 / 任务页 / 分析页的 poi 功能都依赖它）。
+   *
+   * 快照存在「本机轻量存储」（localStorage），**不参与导入导出**，
+   * 因此这里必须给出一个独立的清除入口 —— 否则用户在「数据管理」里清空数据后，
+   * 快照仍留在本机，会让人误以为 poi 数据也被清掉了。
+   */
+  function poiPanel() {
+    const P = KC.poiData;
+    const months = P.snapshotMonths();
+    const meta = P.readMeta();
+    const bytes = KC.localLayer.usage();
+    const usable = KC.localLayer.available();
+
+    const rows = [
+      ['快照月份', months.length ? months.join('、') : '尚无快照'],
+      ['最近同步', meta.lastSyncedAt ? fmtDateTime(meta.lastSyncedAt) : '尚未同步过'],
+      ['来源文件', meta.lastFileName || '—'],
+      ['本机轻量存储占用', bytes ? (bytes + ' 字节') : '0 字节']
+    ];
+
+    return '<div class="panel">' +
+      '<div class="panel-head"><h2>poi 数据快照</h2>' +
+        '<span class="panel-count">' + months.length + ' 个月</span></div>' +
+      '<p class="panel-desc">poi 插件（<code>achieve.json</code>）只保存当月数据，下个月会被覆盖。' +
+        '本工具在「战果记录」页同步时会把关键字段存成本机快照，' +
+        '供「分析 → 战果线对比」与「战果任务 → poi EO 同步」使用。</p>' +
+
+      (usable ? '' :
+        '<p class="form-hint">⚠️ 本机轻量存储不可用，快照只存在于本次会话，关闭页面即丢失。</p>') +
+
+      '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
+        rows.map(function (r) {
+          return '<tr><td>' + U.escapeHtml(r[0]) + '</td><td>' + U.escapeHtml(r[1]) + '</td></tr>';
+        }).join('') +
+      '</tbody></table></div>' +
+
+      '<p class="form-hint">快照保存在「本机轻量存储」里，<strong>不参与导入导出</strong>，' +
+        '也不影响任何战果统计；换浏览器或清理站点数据后会一并丢失，' +
+        '需要重新到「战果记录」页同步 poi 数据。</p>' +
+
+      (months.length
+        ? '<div class="panel-foot">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-act="clear-poi-snapshot">' +
+              '清除全部 ' + months.length + ' 个月的快照</button>' +
+          '</div>'
+        : '') +
+      '</div>';
+  }
+
   function dataPanel() {
     const st = KC.store.state;
     const settings = KC.store.getSettings();
@@ -304,6 +354,7 @@
       planningPanel() +
       serverPanel() +
       exportRemindPanel() +
+      poiPanel() +
       dataPanel() +
       aboutPanel();
   }
@@ -345,6 +396,35 @@
   function resetExportRemind() {
     if (KC.ui.export.clearReminded()) KC.toast('本周期提醒已恢复');
     else KC.toast('本机临时层不可用，无法恢复', 'error');
+    render();
+  }
+
+  /**
+   * 清除全部 poi 快照。
+   *
+   * 这是**破坏性操作**且不可撤销（快照是本工具自己存的，删了只能重新同步 poi），
+   * 所以要显式确认；且必须说清它**只影响 poi 快照**，不动任何业务数据。
+   */
+  async function clearPoiSnapshot() {
+    const months = KC.poiData.snapshotMonths();
+    if (!months.length) return;
+
+    const ok = await KC.confirmDialog({
+      title: '清除 poi 快照',
+      message: '将删除本机保存的 ' + months.length + ' 个月 poi 快照（' +
+        months.join('、') + '）。\n\n' +
+        '影响：\n' +
+        '  · 「分析 → 战果线对比」将没有数据可画\n' +
+        '  · 「战果任务 → poi EO 同步」将无法比对\n' +
+        '  · 已写入的每日记录与任务完成状态**不受影响**\n\n' +
+        '删除后需要重新到「战果记录」页选择 poi 数据文件才能恢复（且只能恢复 poi 当前月）。',
+      okText: '清除快照',
+      danger: true
+    });
+    if (!ok) return;
+
+    const n = KC.poiData.clearAll();
+    KC.toast('已清除 ' + n + ' 个月的 poi 快照');
     render();
   }
 
@@ -406,6 +486,7 @@
     else if (act === 'set-mode') setPlanningMode(btn.dataset.mode);
     else if (act === 'set-export-remind') setExportRemindMode(btn.dataset.mode);
     else if (act === 'reset-export-remind') resetExportRemind();
+    else if (act === 'clear-poi-snapshot') clearPoiSnapshot();
     else if (act === 'move-card') moveCard(btn.dataset.id, btn.dataset.dir);
     else if (act === 'set-card-size') setCardSize(btn.dataset.id, btn.dataset.size);
     else if (act === 'reset-card-layout') resetCardLayout();

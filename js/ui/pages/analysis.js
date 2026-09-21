@@ -401,6 +401,165 @@
       '</div>';
   }
 
+  /* ------------------------------------------- 战果线对比（poi 数据） */
+
+  /** 战果线配色：联合 / 一群 / 二群 / 三群 + 自己（自己用最醒目的金色） */
+  function rankColors() {
+    return {
+      r5: color('--rank-1', '#c0392b'),
+      r20: color('--rank-2', '#b9861b'),
+      r100: color('--rank-3', '#2f6fed'),
+      r501: color('--rank-4', '#128a4d'),
+      my: color('--accent', '#7a4fd6')
+    };
+  }
+
+  /**
+   * 「战果线对比」卡片。
+   *
+   * 数据来自 poi 快照：四条戦果線（poi 按日累积）+ 自己的累计出击战果。
+   * 没有当月快照时给引导文案（去记录页同步），不画空图。
+   *
+   * ⚠️ 快照只含「已同步过的月份」，所以换到没有快照的月份会看到空态；
+   * 这是刻意设计——战果线是 poi 的历史事实，本工具不编造。
+   */
+  function rankPanel(month) {
+    const data = KC.poiData.chartData(month, KC.store.state.dailyRecords);
+    const hasAnyHis = data && data.lines.some(function (l) {
+      return l.key !== 'my' && l.values.some(function (v) { return v !== null; });
+    });
+
+    let body;
+    if (!data) {
+      body = '<div class="empty-inline">该月还没有 poi 战果线快照。' +
+        '到「战果记录」页同步一次 poi 数据（' +
+        '<code>%APPDATA%\\roaming\\poi\\achieve\\achieve.json</code>）后即可查看。</div>';
+    } else if (!hasAnyHis) {
+      body = '<div class="empty-inline">该月快照里还没有战果线数据。</div>';
+    } else if (!hasChartJs()) {
+      body = chartFallback('图表库未加载（vendor/chart.umd.min.js），暂时无法显示图表。');
+    } else {
+      body = '<div class="chart-box chart-box-lg"><canvas id="chart-rank"></canvas></div>';
+    }
+
+    const srcNote = data && data.source === 'poi'
+      ? '自己的累计取自 poi 记录'
+      : (data && data.source === 'records' ? '自己的累计取自本工具记录（该月快照无累计数据）' : '');
+    const syncNote = data && data.syncedAt
+      ? '快照同步于 ' + U.escapeHtml(fmtSyncTime(data.syncedAt))
+      : '';
+
+    return '<div class="panel">' +
+      '<div class="panel-head"><h2>战果线对比</h2>' +
+        '<span class="panel-count">' + U.escapeHtml(U.monthLabel(month)) +
+          (syncNote ? ' · ' + syncNote : '') + '</span></div>' +
+      body +
+      (data && hasAnyHis
+        ? '<ul class="rank-legend">' + data.lines.map(function (l) {
+            const last = lastValue(l.values);
+            return '<li><span class="rank-dot" style="background:' +
+              rankColors()[l.key] + '"></span>' +
+              U.escapeHtml(l.label) +
+              '<em>' + (last === null ? '—' : U.formatNumber(last)) + '</em></li>';
+          }).join('') + '</ul>'
+        : '') +
+      '<p class="form-hint">四条战果线来自 poi（联合 / 一群 / 二群 / 三群，poi 按日累积的排名线）；' +
+        '「我的累计」是本月的累计出击战果。' +
+        (srcNote ? U.escapeHtml(srcNote) + '。' : '') +
+        '数据来自「本机轻量存储」里的 poi 快照，不参与导入导出，换浏览器或清站点数据会丢失。</p>' +
+      '</div>';
+  }
+
+  /** 一条线的最后一个非 null 值（图例里显示"当前值"） */
+  function lastValue(values) {
+    const arr = Array.isArray(values) ? values : [];
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i] !== null && arr[i] !== undefined) return arr[i];
+    }
+    return null;
+  }
+
+  /** ISO 时间 → 'MM-DD HH:mm'（本机时区） */
+  function fmtSyncTime(iso) {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return U.pad2(d.getMonth() + 1) + '-' + U.pad2(d.getDate()) + ' ' +
+        U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes());
+    } catch (err) {
+      return String(iso);
+    }
+  }
+
+  /** 「战果线对比」折线图：四条排名线 + 自己的累计，x 轴为日 */
+  function buildRankChart(month) {
+    const canvas = slot('chart-rank');
+    if (!canvas || !hasChartJs()) return;
+
+    const data = KC.poiData.chartData(month, KC.store.state.dailyRecords);
+    if (!data) return;
+
+    const palette = rankColors();
+    const gridColor = color('--border', '#e4e8ee');
+    const textColor = color('--text-muted', '#667085');
+
+    const datasets = data.lines.map(function (l) {
+      const isMine = l.key === 'my';
+      return {
+        label: l.label,
+        data: l.values,
+        borderColor: palette[l.key],
+        backgroundColor: palette[l.key],
+        // 自己那条更粗、带点，其余细线，避免 5 条线糊在一起
+        borderWidth: isMine ? 2.5 : 1.5,
+        pointRadius: isMine ? 0 : 0,
+        pointHoverRadius: 4,
+        tension: 0.25,
+        spanGaps: true,
+        fill: false
+      };
+    });
+
+    pageState.charts.push(new window.Chart(canvas, {
+      type: 'line',
+      data: { labels: data.labels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, color: textColor }
+          },
+          tooltip: {
+            callbacks: {
+              title: function (items) {
+                return items.length ? items[0].label + ' 日' : '';
+              },
+              label: function (item) {
+                return item.dataset.label + '：' +
+                  (item.parsed.y === null ? '—' : U.formatNumber(item.parsed.y));
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: axisTicks(textColor),
+            title: { display: true, text: '日', color: textColor }
+          },
+          y: {
+            beginAtZero: false,
+            grid: { color: gridColor },
+            ticks: { color: textColor }
+          }
+        }
+      }
+    }));
+  }
+
   function historyPanel(months, now) {
     if (!months.length) {
       return '<div class="panel"><div class="panel-head"><h2>历史月份统计</h2></div>' +
@@ -456,11 +615,13 @@
       progressPanel(comp.plan) +
       dailyPanel(month) +
       '<div class="dash-split">' + comparePanel(range) + compositionPanel(comp) + '</div>' +
+      rankPanel(month) +
       historyPanel(history, now);
 
     buildDailyChart(records, month);
     buildCompareChart(KC.store, range.months);
     buildCompositionChart(comp);
+    buildRankChart(month);
   }
 
   /* -------------------------------------------------------------- 交互 */

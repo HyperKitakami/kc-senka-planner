@@ -247,6 +247,142 @@
         view.pending.length + ' 项待完成', '');
   }
 
+  /* ------------------------------------------- poi EO 批量同步 */
+  const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\achieve\\achieve.json';
+
+  /** 同步面板的 DOM 槽（在 buildShell 里建一次，之后只刷 innerHTML） */
+  function renderPoiSlot() {
+    const host = slot('task-poi-slot');
+    if (!host) return;
+    host.innerHTML = poiPanel();
+  }
+
+  /** 当前归属月的 poi EO 差异（无快照返回 null） */
+  function poiDiff() {
+    return KC.poiData.eoDiff(
+      planningMonth(),
+      KC.store.state.taskTemplates,
+      KC.store.state.taskRecords,
+      KC.calc.tasks.readRecord,
+      new Date()
+    );
+  }
+
+  /**
+   * poi 同步面板。
+   *
+   * 只做**批量勾选**（poi 说完成 → 我们也勾上），不做自动取消：
+   * poi 的 rankuex 只反映"当前血条在不在"，而战果归属有 21:00 边界，
+   * 自动取消会把已经计入历史归属的战果抹掉。反向差异只列出来提示。
+   */
+  function poiPanel() {
+    const diff = poiDiff();
+    const month = planningMonth();
+
+    if (!diff) {
+      return '<div class="panel poi-panel">' +
+        '<div class="panel-head"><h2>poi EO 同步</h2>' +
+          '<span class="panel-count">该月无快照</span></div>' +
+        '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
+          ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
+          U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选 EO 任务。</p>' +
+        '</div>';
+    }
+
+    const c = diff.counts;
+    const nothing = c.done === 0 && c.undone === 0;
+
+    const rows = function (list, mark) {
+      return list.map(function (r) {
+        return '<li><span class="poi-chip-badge">' + mark + '</span>' +
+          '<span class="poi-eo-name">' + U.escapeHtml(r.code) + '</span>' +
+          '<span class="poi-eo-senka">' + U.formatNumber(r.senka) + '</span></li>';
+      }).join('');
+    };
+
+    let body;
+    if (nothing) {
+      body = '<div class="empty-inline">poi 与本工具记录的 EO 完成状态一致，无需同步。</div>';
+    } else {
+      body = '<div class="poi-diff">' +
+        (c.done
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">poi 已完成，本工具未勾选（' +
+              c.done + ' 项）</div><ul class="poi-eo-list">' + rows(diff.done, '待勾选') + '</ul></div>'
+          : '') +
+        (c.undone
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">本工具已勾选，poi 显示未完成（' +
+              c.undone + ' 项）</div><ul class="poi-eo-list">' + rows(diff.undone, '仅提示') + '</ul>' +
+              '<p class="form-hint">poi 只反映「当前血条是否还在」。这些任务本工具已标记完成，' +
+              '可能已计入战果归属 —— 不会自动取消，请自行确认后手动处理。</p></div>'
+          : '') +
+        '</div>';
+    }
+
+    const foot = c.done
+      ? '<div class="panel-foot">' +
+          '<button type="button" class="btn btn-primary" data-act="poi-eo-sync">' +
+            '批量勾选 ' + c.done + ' 项 EO 任务</button>' +
+          '<span class="poi-status-line">共 ' + diff.same.length + ' 项状态一致' +
+            (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') +
+            (diff.syncedAt ? ' · 快照同步于 ' + U.escapeHtml(fmtDateTime(new Date(diff.syncedAt))) : '') +
+          '</span>' +
+        '</div>'
+      : '<p class="form-hint">共 ' + diff.same.length + ' 项状态一致' +
+        (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') + '。</p>';
+
+    return '<div class="panel poi-panel">' +
+      '<div class="panel-head"><h2>poi EO 同步</h2>' +
+        '<span class="panel-count">' + U.escapeHtml(U.monthLabel(month)) + '</span></div>' +
+      body + foot +
+      '<p class="form-hint">数据来自「本机轻量存储」里的 poi 快照，不参与导入导出；' +
+        '换浏览器或清站点数据会丢失。勾选后仍可在列表中逐项取消完成。</p>' +
+      '</div>';
+  }
+
+  /** 批量勾选：确认 → 批量写入 → 提示 */
+  async function handlePoiEoSync() {
+    const diff = poiDiff();
+    if (!diff || !diff.counts.done) return;
+
+    const month = planningMonth();
+    const total = U.round2(diff.done.reduce(function (s, r) { return s + r.senka; }, 0));
+    const preview = diff.done.slice(0, 8).map(function (r) {
+      return '  · ' + r.code + '  ' + U.formatNumber(r.senka);
+    }).join('\n');
+
+    const ok = await KC.confirmDialog({
+      title: '批量勾选 EO 任务',
+      message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项 EO 任务标记为已完成' +
+        '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
+        (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
+        '\n\n依据是 poi 的「未完成海域」列表。已有进度节点的任务会保留其进度；' +
+        '勾选后仍可逐项取消完成。',
+      okText: '勾选 ' + diff.done.length + ' 项'
+    });
+    if (!ok) return;
+
+    // 补录历史月时，完成时刻要落在目标归属月内（否则战果会被算到当前月）
+    const items = diff.done.map(function (r) {
+      return {
+        templateId: r.template.id,
+        periodId: r.period.id,
+        completedAt: backfillAt(month, r.period)
+      };
+    });
+
+    try {
+      const res = await KC.store.setTasksCompletedBatch(items);
+      if (res.failed.length) {
+        KC.toast('已勾选 ' + res.ok + ' 项，' + res.failed.length + ' 项失败。', 'error');
+      } else {
+        KC.toast('已勾选 ' + res.ok + ' 项 EO 任务', 'ok');
+      }
+    } catch (err) {
+      KC.toast(err.message, 'error');
+    }
+    renderPoiSlot();
+  }
+
   /* -------------------------------------------------------------- 表单 */
 
   function selectOptions(map, current) {
@@ -1029,6 +1165,8 @@
       groupPlan(btn.dataset.group, btn.dataset.select === '1');
     } else if (act === 'clear-pool') {
       clearPool();
+    } else if (act === 'poi-eo-sync') {
+      handlePoiEoSync();
     } else if (act === 'prev-month') {
       switchMonth(U.addMonths(planningMonth(), -1));
     } else if (act === 'next-month') {
@@ -1055,9 +1193,15 @@
   /* -------------------------------------------------------------- 生命周期 */
 
   function buildShell() {
+    // ⚠️ 面板内容**直接写进外壳字符串**（而不是先建空槽再填充）：
+    //    ① 首屏不会出现"空槽 → 下一帧才有内容"的闪烁；
+    //    ② 假 DOM 不解析 innerHTML，槽位只是个缓存占位元素，往槽里写的内容
+    //       在容器字符串里看不到。把它放进外壳，页面级测试才能断言到内容。
+    //    后续刷新（renderPoiSlot）才走槽位，避免整页重绘。
     pageState.container.innerHTML =
       pageHead() +
       '<div class="card-grid" id="task-summary"></div>' +
+      '<div id="task-poi-slot">' + poiPanel() + '</div>' +
       '<div id="task-notice-slot"></div>' +
       '<div id="task-form-slot"></div>' +
       '<div id="task-list-slot"></div>';
@@ -1095,6 +1239,7 @@
       unsubscribe = KC.store.subscribe(function (type) {
         if (type !== 'change') return;
         renderSummary();
+        renderPoiSlot();
         renderList();
         if (pageState.formOpen) renderForm();
       });
