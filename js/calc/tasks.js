@@ -73,6 +73,53 @@
   }
 
   /**
+   * 读取"当前周期"的记录，用于完成状态与节点进度。
+   *
+   * 任务若带进度（stepProgress），该进度只作为当前状态使用 —— 记录的周期已不是
+   * 任务的当前周期时（日常/周常跨期、月常跨月等），整条记录视同不存在，
+   * 于是进度自然重置。历史归属统计不走这里，因此旧周期记录不会丢。
+   * 无进度的普通记录不参与这层重置，保持与旧版完全一致的行为。
+   */
+  function readRecord(templates, records, template, periodId, now) {
+    const record = findRecord(records, template.id, periodId);
+    if (!record) return null;
+    const progress = record.stepProgress;
+    if (!progress || typeof progress !== 'object' || !Object.keys(progress).length) return record;
+    const cycle = template.resetCycle;
+    if (!cycle || cycle === 'NONE') return record;
+    const period = KC.periods.taskPeriod(cycle, now, {
+      eventPeriodId: template.eventPeriodId,
+      resetMonth: template.resetMonth
+    });
+    return period && period.id === periodId ? record : null;
+  }
+
+  /**
+   * 任务完成状态。
+   *
+   * 判定顺序很重要，这里体现的是用户口径「读法 A：完成单调，需显式取消」：
+   *   · record.completed === false（或没有记录）⇒ 未完成，直接返回 false
+   *   · record.completed === true  ⇒ **已完成，且此后不再因进度回退而失效**。
+   *     于是「节点全达成自动变完成」成立，「从满进度减回来不自动退回」也成立 ——
+   *     后者保留 completed 这个事实，战果不丢，要撤销必须用户显式取消完成。
+   *
+   * 注意：节点未全达成却仍是 completed 的记录，只可能来自"先完成、后减进度"，
+   * 或用户手动勾选。这是刻意允许的状态（见 store.setTaskStepProgress）。
+   * 无节点任务（无 steps / steps 为空）时行为与改造前完全一致。
+   */
+  function isCompleted(record, template) {
+    return !!(record && record.completed);
+  }
+
+  /**
+   * 任务当前选中的期次是否"节点全部达成"。
+   * 只用于界面提示（如标出"手动完成、节点未满"），不参与战果统计。
+   */
+  function stepsAllDone(record, template) {
+    return KC.schema.taskCompletedBySteps(template, record && record.stepProgress);
+  }
+
+  /**
    * 汇总每个任务模板的当前状态。
    * @returns {Array<{template, period, record, completed}>}
    */
@@ -80,12 +127,12 @@
     now = now || new Date();
     return templates.map(function (template) {
       const period = periodOf(template, now);
-      const record = findRecord(records, template.id, period.id);
+      const record = readRecord(templates, records, template, period.id, now);
       return {
         template: template,
         period: period,
         record: record,
-        completed: !!(record && record.completed)
+        completed: isCompleted(record, template)
       };
     });
   }
@@ -201,6 +248,8 @@
 
       periodsFor(template).forEach(function (period) {
         const record = findRecord(records, template.id, period.id);
+        // 只认 completed 这个事实。节点没满但仍是 completed 的情况（先完成后减进度）
+        // 按读法 A 保留战果；要撤销得靠用户显式取消完成，而不是靠改进度。
         if (!record || !record.completed) return;
         const month = periodAttributionMonth(record, period, template);
         // 无法判定归属（事件/长期任务缺完成时刻）时按当前浏览月计入，保持旧行为
@@ -215,14 +264,15 @@
 
   /** 同 summarize，但把任务周期锚定到指定月份 */
   function summarizeForMonth(templates, records, monthKey, now) {
+    now = now || new Date();
     return templates.map(function (template) {
       const period = periodForMonth(template, monthKey, now);
-      const record = findRecord(records, template.id, period.id);
+      const record = readRecord(templates, records, template, period.id, now);
       return {
         template: template,
         period: period,
         record: record,
-        completed: !!(record && record.completed)
+        completed: isCompleted(record, template)
       };
     });
   }
@@ -303,6 +353,9 @@
     periodsInAttributionWindow: periodsInAttributionWindow,
     completedSenkaInMonth: completedSenkaInMonth,
     findRecord: findRecord,
+    readRecord: readRecord,
+    isCompleted: isCompleted,
+    stepsAllDone: stepsAllDone,
     summarize: summarize,
     summarizeForMonth: summarizeForMonth,
     groupItems: groupItems,

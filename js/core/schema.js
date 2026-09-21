@@ -208,6 +208,82 @@
     };
   }
 
+  /* ------------------------------------------------- 任务进度（steps / 进度） */
+
+  /**
+   * 「任务进度」相关字段（均为**可选字段**，缺失时行为与旧数据完全一致）：
+   *
+   *   TaskTemplate.steps         [{ code, label, requiredCount }]
+   *     · 任务需要逐个达成的节点，如 1-1 A胜 1 次 / 1-2 S胜 2 次。
+   *     · 缺失或为空 ⇒ 该任务没有节点，完成状态完全由 TaskRecord.completed 决定。
+   *
+   *   TaskRecord.stepProgress    { [code]: 已达成次数 }
+   *     · 只记录当前周期内的进度；**不参与战果归属统计，不进归档**。
+   *     · 与 TaskRecord.periodId 绑定：读取时若记录的周期已不是任务当前周期，
+   *       进度视为已重置（跟随任务周期刷新）。
+   *
+   * 之所以可以「不升 SCHEMA_VERSION」：两个字段都只在本机当前周期内使用，
+   * 导入导出按记录整体携带，读取时一律走下面的工具函数兜底，
+   * 因此不存在需要批量改写的存量数据（与 MonthlyContext.planningPool 同一先例）。
+   */
+
+  /** 步骤 code 的去重键（trim + 小写，避免 Node / NODE 被当成两个节点） */
+  function stepCodeKey(code) {
+    return String(code === undefined || code === null ? '' : code).trim().toLowerCase();
+  }
+
+  /**
+   * 校正一个任务的步骤配置。
+   * 过滤空 code、把 requiredCount 收敛为 >= 1 的整数、按 code 去重（保留第一个）。
+   * 返回 null 表示「没有有效步骤」——调用方应视为无节点任务，而不是空数组。
+   */
+  function normalizeSteps(steps) {
+    if (!Array.isArray(steps)) return null;
+    const seen = {};
+    const out = [];
+    steps.forEach(function (raw) {
+      const code = String((raw && raw.code) || '').trim();
+      if (!code) return;
+      const key = stepCodeKey(code);
+      if (seen[key]) return;
+      seen[key] = true;
+      const n = Math.round(Number(raw && raw.requiredCount));
+      out.push({
+        code: code,
+        label: String((raw && raw.label) || '').trim() || code,
+        requiredCount: isFinite(n) && n >= 1 ? n : 1
+      });
+    });
+    return out.length ? out : null;
+  }
+
+  /** 单个节点是否已达成：已计次数是否达到该节点的 requiredCount */
+  function isStepDone(step, progress) {
+    if (!step) return true;
+    const need = Math.max(1, Math.round(Number(step.requiredCount)) || 1);
+    const got = Math.round(Number((progress || {})[step.code]));
+    return isFinite(got) && got >= need;
+  }
+
+  /**
+   * 由进度推导「全部节点是否完成」。
+   * @returns {boolean|null} 该任务没有节点时返回 null（交由 TaskRecord.completed 决定）
+   */
+  function taskCompletedBySteps(template, progress) {
+    const steps = (template && template.steps) || null;
+    if (!steps || !steps.length) return null;
+    return steps.every(function (s) { return isStepDone(s, progress); });
+  }
+
+  /** 已达成节点数 / 总节点数（供 UI 显示 n/m） */
+  function taskStepProgress(template, progress) {
+    const steps = (template && template.steps) || [];
+    const total = steps.length;
+    let done = 0;
+    steps.forEach(function (s) { if (isStepDone(s, progress)) done++; });
+    return { done: done, total: total };
+  }
+
   /**
    * 迁移链：MIGRATIONS[n] 表示 v(n-1) -> v(n) 的迁移函数。
    */
@@ -280,6 +356,12 @@
     RESET_CYCLES: ['NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'EVENT'],
     /** 奖励区间枚举（docs/01_requirements.md §5.2） */
     REWARD_TIERS: REWARD_TIERS,
+    /** 任务进度（可选字段）：步骤配置与判定工具 */
+    normalizeSteps: normalizeSteps,
+    stepCodeKey: stepCodeKey,
+    isStepDone: isStepDone,
+    taskCompletedBySteps: taskCompletedBySteps,
+    taskStepProgress: taskStepProgress,
     /** 游戏服务器枚举（编号 + 名称） */
     SERVERS: SERVERS,
     RANK_IMAGE_BASE: RANK_IMAGE_BASE,

@@ -45,7 +45,9 @@
     /** 当前查看的「战果归属月」；null = 本月。切换后即可补录该月的任务 */
     month: null,
     /** 各任务当前选中的期次 id（仅 DAILY / WEEKLY 需要，见 pickedPeriod） */
-    periodPick: {}
+    periodPick: {},
+    /** 已展开进度面板的任务 id（默认全部折叠，见「任务进度」） */
+    expanded: {}
   };
 
   let unsubscribe = null;
@@ -111,13 +113,41 @@
   /** 列表行 / 分组统计用的视图模型：完成状态按"所选期次"判定 */
   function itemView(template, month) {
     const period = pickedPeriod(template, month);
-    const record = period.id ? KC.store.getTaskRecord(template.id, period.id) : null;
+    // readRecord 会对"带进度但周期已过期"的记录做重置；补录历史周期时
+    // 界面走的是"当前此期就是我要记的那一期"，因此这里传 pickedPeriod 的 id。
+    const record = period.id
+      ? KC.calc.tasks.readRecord([], KC.store.state.taskRecords, template, period.id, new Date())
+      : null;
     return {
       template: template,
       period: period,
       record: record,
-      completed: !!(record && record.completed)
+      completed: KC.calc.tasks.isCompleted(record, template)
     };
+  }
+
+  /**
+   * 已是记录里的完成态、但节点并未全部达成（先完成后减进度，或用户手动勾选）。
+   * 节点判定统一走 `KC.calc.tasks.stepsAllDone(record, template)`，页面不再自备一份，
+   * 避免同一个名字出现两套参数顺序。
+   */
+  function isManualDone(template, record) {
+    return !!(record && record.completed) &&
+      KC.calc.tasks.stepsAllDone(record, template) === false;
+  }
+
+  /**
+   * 当前是否允许修改该任务的节点进度。
+   *
+   * 已完成的任务必须先取消完成才能改进度 —— 这样"完成"始终是一个用户明确表达过的状态，
+   * 不会出现"我明明没勾完成、却因为改了进度而悄悄变成已完成"的困惑。
+   * 注意取消完成**不会**清掉进度（读法 A），所以解锁后可以从原进度继续改。
+   * 历史月（补录场景）不做此限制。
+   */
+  function progressEditable(template, record, month) {
+    if (template.enabled === false) return false;
+    if (month !== KC.periods.currentAttributionMonth(new Date())) return true;
+    return !(record && record.completed);
   }
 
   /**
@@ -234,6 +264,143 @@
     });
   }
 
+  /* --------------------------------------------- 表单：进度节点编辑 */
+
+  /**
+   * 单个节点行（DOM 构造）。
+   *
+   * 为什么不用 innerHTML 拼字符串：节点行需要**动态增删**且不能重绘整个表单
+   * （表单里还有用户正在填的其它字段，整块重绘会把它们冲掉）。DOM 构造还能让
+   * value 直接赋值，天然免掉 HTML 转义问题。
+   *
+   * @param {{code?:string,label?:string,requiredCount?:number}} [step]
+   */
+  function stepEditRow(step) {
+    const s = step || {};
+    const row = document.createElement('div');
+    row.className = 'step-edit-row';
+    row.dataset.stepRow = '';
+
+    function field(cls, type, key, aria, placeholder, value) {
+      const input = document.createElement('input');
+      input.type = type;
+      input.className = cls;
+      input.dataset.field = key;
+      input.setAttribute('aria-label', aria);
+      if (placeholder) input.placeholder = placeholder;
+      if (value !== undefined) input.value = value;
+      return input;
+    }
+
+    row.appendChild(field('step-edit-code', 'text', 'code', '节点代号',
+      '如 1-1-A', String(s.code || '')));
+    row.appendChild(field('step-edit-label', 'text', 'label', '节点说明',
+      '如 1-1 A胜（留空则用代号）', String(s.label || '')));
+    row.appendChild(field('step-edit-need', 'number', 'requiredCount', '需要次数',
+      '', String(Math.max(1, Math.round(Number(s.requiredCount)) || 1))));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'step-edit-del';
+    del.dataset.act = 'del-step-row';
+    del.setAttribute('aria-label', '删除该节点');
+    del.title = '删除该节点';
+    del.textContent = '×';
+    row.appendChild(del);
+
+    return row;
+  }
+
+  /**
+   * 「海域攻略进度节点」编辑区外壳。
+   *
+   * 这里是**配置**节点的地方（TaskTemplate.steps）；页面列表里那个可折叠面板
+   * 是**记录**进度的（TaskRecord.stepProgress）。两者容易混淆，故在提示里点明。
+   *
+   * 系统任务仅可调整启用状态，不显示本区域（与其它字段的 disabled 口径一致）。
+   * 行内容由 mountStepRows 在写入 innerHTML 之后追加（见 renderForm）。
+   */
+  function stepsEditorHtml(locked) {
+    if (locked) return '';
+    return '<div class="steps-editor">' +
+        '<div class="steps-editor-head">' +
+          '<span class="field-label">海域攻略进度节点</span>' +
+          '<span class="steps-editor-count" id="step-rows-count"></span>' +
+        '</div>' +
+        '<div class="step-edit-list" id="step-edit-list"></div>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="add-step-row">' +
+          '+ 添加节点</button>' +
+      '</div>' +
+      '<p class="form-hint">节点用于逐项记录攻略进度（如「1-1 A胜 1 次」「1-2 S胜 2 次」），' +
+        '全部达成后任务会自动标记为已完成；不需要逐项记录的任务留空即可。' +
+        '代号留空的节点在保存时会被丢弃，代号重复只保留第一个。</p>';
+  }
+
+  /**
+   * 表单里的节点行容器。
+   * 用页面根容器的 id 查询（而不是在表单元素内向下查），这样在真实 DOM 与
+   * 测试用假 DOM 下都能拿到同一个节点（假 DOM 不解析 innerHTML）。
+   */
+  function stepEditorList() { return slot('step-edit-list'); }
+
+  /** 同步节点计数文案（增删行 / 重建表单后调用） */
+  function syncStepRowCount() {
+    const label = slot('step-rows-count');
+    const list = stepEditorList();
+    if (!label || !list) return;
+    label.textContent = KC.dom.qsa('[data-step-row]', list).length + ' 个节点';
+  }
+
+  /** 清空并重建全部节点行（打开表单 / 切换编辑对象时用） */
+  function mountStepRows(steps) {
+    const list = stepEditorList();
+    if (!list) return;
+    KC.dom.clear(list);
+    (steps || []).forEach(function (s) { list.appendChild(stepEditRow(s)); });
+    syncStepRowCount();
+  }
+
+  /** 添加一个空的节点行并聚焦到代号输入框 */
+  function addStepRow() {
+    const list = stepEditorList();
+    if (!list) return;
+    const row = stepEditRow(null);
+    list.appendChild(row);
+    syncStepRowCount();
+    const input = row.querySelector('[data-field="code"]');
+    if (input && typeof input.focus === 'function') input.focus();
+  }
+
+  /** 删除某个节点行（由行内 × 按钮触发） */
+  function removeStepRow(btn) {
+    const row = KC.dom.closestFrom(btn, '[data-step-row]');
+    if (!row || !row.parentNode) return;
+    row.parentNode.removeChild(row);
+    syncStepRowCount();
+  }
+
+  /**
+   * 从表单中收集节点配置。
+   * 返回 **null** 表示没有有效节点 —— 与 schema.normalizeSteps 的语义一致，
+   * 交给 store 决定"不写 steps 键"。这里只读值不清洗（去重 / 收敛次数由
+   * schema.normalizeSteps 统一负责，避免两处规则走偏）。
+   */
+  function collectSteps() {
+    const list = stepEditorList();
+    if (!list) return null;
+    const rows = KC.dom.qsa('[data-step-row]', list).map(function (row) {
+      const codeEl = row.querySelector('[data-field="code"]');
+      const labelEl = row.querySelector('[data-field="label"]');
+      const needEl = row.querySelector('[data-field="requiredCount"]');
+      return {
+        code: codeEl ? codeEl.value : '',
+        label: labelEl ? labelEl.value : '',
+        requiredCount: needEl ? needEl.value : 1
+      };
+    });
+    return KC.schema.normalizeSteps(rows);
+  }
+
   function renderForm() {
     const host = slot('task-form-slot');
     if (!host) return;
@@ -245,8 +412,9 @@
 
     const t = editing || {
       name: '', taskGroup: 'EX', senkaValue: '', resetCycle: 'MONTHLY',
-      resetMonth: 1, eventPeriodId: '', enabled: true, defaultInPlan: false
+      resetMonth: 1, eventPeriodId: '', enabled: true, defaultInPlan: false, steps: null
     };
+    const locked = !!(editing && editing.isSystem);
 
     host.innerHTML =
       '<div class="panel">' +
@@ -296,6 +464,7 @@
             '<label class="check"><input type="checkbox" name="defaultInPlan"' +
               (t.defaultInPlan ? ' checked' : '') + '> 默认纳入规划池</label>' +
           '</div>' +
+          stepsEditorHtml(locked) +
           '<div class="form-actions">' +
             '<button type="submit" class="btn btn-primary">保存</button>' +
             '<button type="button" class="btn btn-ghost" data-act="cancel-form">取消</button>' +
@@ -304,6 +473,8 @@
         '<p class="form-hint">周期类型决定任务何时刷新：日常 / 周常（周一）04:00，每月 1 日 04:00，每季度首月 1 日 04:00，每年指定月份 1 日 04:00；活动周期由用户手动指定。</p>' +
       '</div>';
 
+    // 节点行用 DOM 追加（外壳的 innerHTML 才刚写完，真实 DOM 下此时才能查到容器）
+    if (!locked) mountStepRows(t.steps);
     toggleFormConditional(t.resetCycle);
   }
 
@@ -338,11 +509,107 @@
       '</td>';
   }
 
+  /**
+   * 任务名单元格。
+   * 带节点的任务多一个折叠箭头 + 「进度 n/m」角标；默认折叠（见 pageState.expanded）。
+   */
+  function nameCell(item) {
+    const t = item.template;
+    const steps = t.steps || [];
+
+    let toggle = '';
+    let badge = '';
+    if (steps.length) {
+      const open = !!pageState.expanded[t.id];
+      const stat = KC.schema.taskStepProgress(t, item.record && item.record.stepProgress);
+      toggle = '<button type="button" class="step-toggle" data-act="toggle-steps" data-id="' +
+        U.escapeHtml(t.id) + '" aria-expanded="' + (open ? 'true' : 'false') +
+        '" title="' + (open ? '收起进度' : '展开进度') + '">' + (open ? '▾' : '▸') + '</button>';
+      const manual = isManualDone(t, item.record);
+      badge = '<span class="step-badge' + (stat.done >= stat.total ? ' is-full' : '') +
+        (manual ? ' is-manual' : '') + '" title="' +
+        (manual ? '已完成（未走完节点，或完成后调低了进度）' : '进度 ' + stat.done + '/' + stat.total) + '">' +
+        stat.done + '/' + stat.total + '</span>';
+    }
+
+    return '<td class="cell-name">' + toggle + '<span class="task-name-text">' +
+      U.escapeHtml(t.name) + '</span>' +
+      (t.isSystem ? '<span class="tag tag-sys">系统</span>' : '') +
+      (t.enabled === false ? '<span class="tag tag-off">已停用</span>' : '') +
+      badge +
+      '</td>';
+  }
+
+  /**
+   * 进度面板（展开行）。
+   * 每个节点一行：label + [−] n/need [+]。
+   * 已完成的任务默认只读，需先取消完成 —— 否则改完进度会出现
+   * "节点没满但任务仍显示已完成"的不一致（用户口径：完成状态单调、需显式取消）。
+   */
+  function stepPanel(item, month) {
+    const t = item.template;
+    const steps = t.steps || [];
+    if (!steps.length || !pageState.expanded[t.id]) return '';
+
+    const progress = (item.record && item.record.stepProgress) || {};
+    const editable = progressEditable(t, item.record, month);
+    const stat = KC.schema.taskStepProgress(t, progress);
+
+    const rows = steps.map(function (s) {
+      const need = Math.max(1, Math.round(Number(s.requiredCount)) || 1);
+      const got = Math.min(need, Math.max(0, Math.round(Number(progress[s.code])) || 0));
+      const done = KC.schema.isStepDone(s, progress);
+      const code = U.escapeHtml(s.code);
+      const dis = editable ? '' : ' disabled';
+
+      return '<div class="step-row' + (done ? ' is-done' : '') + '">' +
+        '<span class="step-label">' + U.escapeHtml(s.label || s.code) +
+          (need > 1 ? '<span class="step-need">×' + need + '</span>' : '') + '</span>' +
+        '<span class="step-ctrl">' +
+          '<button type="button" class="step-btn" data-act="step-minus" data-id="' + U.escapeHtml(t.id) +
+            '" data-code="' + code + '" aria-label="减少一次"' + dis + '>−</button>' +
+          '<span class="step-count"' + (dis ? ' title="任务已完成，请先取消完成再调整进度"' : '') + '>' +
+            got + ' / ' + need + '</span>' +
+          '<button type="button" class="step-btn" data-act="step-plus" data-id="' + U.escapeHtml(t.id) +
+            '" data-code="' + code + '" aria-label="增加一次"' + dis + '>＋</button>' +
+        '</span>' +
+        '</div>';
+    }).join('');
+
+    const manual = isManualDone(t, item.record);
+    const allSteps = KC.calc.tasks.stepsAllDone(item.record, t) === true;
+    let hint;
+    if (!editable) {
+      // 已完成 ⇒ 节点按钮锁定。这里要说清取消完成之后进度会怎样，
+      // 因为它取决于"取消那一刻节点是否全满"（全满则连带清零）。
+      hint = allSteps
+        ? '任务已完成。取消「完成」会同时重置这些进度记录（本轮视为重新开始）。'
+        : '任务已完成，但节点未全部达成 —— 取消「完成」后这些进度会保留，可继续记录。';
+    } else if (manual) {
+      hint = '这是「已完成」但节点未满的状态（完成后调低了进度）。战果按已计算入，' +
+        '要撤销请取消「完成」；补满所有节点即可回到正常完成。';
+    } else {
+      hint = '点击 ＋ / − 记录达成次数；全部节点达成后任务会自动标记为已完成。';
+    }
+
+    return '<td colspan="6" class="cell-steps">' +
+      '<div class="step-panel"' + (editable ? '' : ' data-locked="1"') + '>' +
+        '<div class="step-panel-head">' +
+          '<span>海域攻略进度</span>' +
+          '<span class="step-panel-count">' + stat.done + ' / ' + stat.total + ' 节点达成</span>' +
+        '</div>' +
+        rows +
+        '<p class="step-hint">' + hint + '</p>' +
+      '</div>' +
+      '</td>';
+  }
+
   function renderRow(item, poolSet, month) {
     const t = item.template;
+    const hasSteps = !!(t.steps && t.steps.length);
     const disabled = t.enabled === false;
-    const cls = 'task-row' + (item.completed ? ' is-done' : '') + (disabled ? ' is-off' : '');
-    const poolChecked = poolSet.has(t.id) && !item.completed && !disabled;
+    // 有节点且有进度/完成状态时才画"已完成"底纹，避免 0 进度任务看起来像已完成
+    const cls = 'task-row' + (item.completed ? ' is-step-done' : '') + (disabled ? ' is-off' : '');
 
     const actions = [];
     if (t.isSystem) {
@@ -357,26 +624,35 @@
         U.escapeHtml(t.id) + '">删除</button>');
     }
 
-    return '<tr class="' + cls + '">' +
+    // 带节点的任务：完成状态由进度推导，但勾选框仍可操作 ——
+    // 勾上=直接标记完成（不必走完节点），取消=显式撤回完成（读法 A 要求的唯一回退途径）。
+    const checkTitle = hasSteps ? '勾选可直接标记完成；取消勾选即撤回完成（进度会保留）' : '';
+    const check =
       '<td class="cell-check">' +
         '<input type="checkbox" data-act="toggle" data-id="' + U.escapeHtml(t.id) + '"' +
-          (item.completed ? ' checked' : '') + (disabled ? ' disabled' : '') +
+          (item.completed ? ' checked' : '') +
+          (disabled ? ' disabled' : '') +
+          (hasSteps ? ' title="' + checkTitle + '"' : '') +
           ' aria-label="标记完成">' +
-      '</td>' +
-      '<td class="cell-name">' + U.escapeHtml(t.name) +
-        (t.isSystem ? '<span class="tag tag-sys">系统</span>' : '') +
-        (disabled ? '<span class="tag tag-off">已停用</span>' : '') +
-      '</td>' +
+      '</td>';
+
+    const main = '<tr class="' + cls + '">' +
+      check +
+      nameCell(item) +
       '<td class="col-senka">' + U.formatNumber(t.senkaValue) + '</td>' +
       periodCell(item, month) +
       '<td class="cell-check">' +
         '<input type="checkbox" data-act="plan" data-id="' + U.escapeHtml(t.id) + '"' +
-          (poolChecked ? ' checked' : '') + (item.completed || disabled ? ' disabled' : '') +
+          (poolSet.has(t.id) && !item.completed && !disabled ? ' checked' : '') +
+          (item.completed || disabled ? ' disabled' : '') +
           ' title="' + (item.completed ? '已完成，不重复计入规划池' : (disabled ? '任务已停用' : '纳入规划池')) + '"' +
           ' aria-label="参与规划">' +
       '</td>' +
       '<td class="cell-actions">' + actions.join('') + '</td>' +
       '</tr>';
+
+    const panel = stepPanel(item, month);
+    return main + (panel ? '<tr class="task-steps-row">' + panel + '</tr>' : '');
   }
 
   function renderGroup(group, poolSet, month) {
@@ -472,6 +748,23 @@
     );
     if (!ok) { renderList(); return; }
 
+    // 取消完成时，若此刻节点全部达成，取消完成会连带把进度清零（"这一轮重来"）。
+    // 这会丢掉用户一条条记下的进度，所以先显式确认；其余情况静默取消。
+    let resetProgress = false;
+    if (!checked) {
+      resetProgress = KC.store.willResetProgressOnUncomplete(id, period.id);
+      if (resetProgress) {
+        const sure = await KC.confirmDialog({
+          title: '取消完成并重置进度',
+          message: '「' + template.name + '」的进度节点已全部达成。\n' +
+            '取消完成会同时清空这些进度记录，下次需要重新逐项记录。确定继续吗？',
+          okText: '取消完成并重置',
+          danger: true
+        });
+        if (!sure) { renderList(); return; }
+      }
+    }
+
     // 只有"正在完成当前这一期"才用真实时刻；补录历史周期用落在目标月内的近似时刻，
     // 否则战果会被算到当前月（归属按完成时刻判定，见 docs/04_calculation.md §4.6）。
     const isCurrentPeriod = period.id === KC.calc.tasks.periodOf(template, now).id;
@@ -479,8 +772,12 @@
 
     try {
       await KC.store.setTaskCompleted(id, period.id, checked, at);
-      const msg = completeToast(template, checked, now, month, period);
-      KC.toast(msg.text, msg.tone);
+      if (resetProgress) {
+        KC.toast('已取消完成，并重置了进度记录：' + template.name, 'ok');
+      } else {
+        const msg = completeToast(template, checked, now, month, period);
+        KC.toast(msg.text, msg.tone);
+      }
     } catch (err) {
       KC.toast(err.message, 'error');
       renderList();
@@ -516,6 +813,68 @@
         U.monthLabel(att) + '。' };
     }
     return { text: base, tone: 'ok' };
+  }
+
+  /**
+   * 折叠 / 展开某任务的进度面板（默认折叠）。
+   */
+  function toggleSteps(id) {
+    if (pageState.expanded[id]) delete pageState.expanded[id];
+    else pageState.expanded[id] = true;
+    renderList();
+  }
+
+  /**
+   * 调整某任务某个节点的达成次数（Δ = ±1）。
+   *
+   * 完成状态联动遵循用户口径「读法 A」：节点全达成会自动把任务标为已完成；
+   * 而从满进度减回来**不会**自动退回完成状态，需要用户显式取消完成。
+   * 归档月份与勾选完成走同一套确认（docs/06_data_strategy.md §4.2）。
+   */
+  async function bumpStep(id, code, delta) {
+    const template = KC.store.getTaskTemplate(id);
+    if (!template) return;
+    const step = (template.steps || []).filter(function (s) { return s.code === code; })[0];
+    if (!step) return;
+
+    const now = new Date();
+    const month = planningMonth();
+    const period = pickedPeriod(template, month);
+    if (!period.id) return;
+
+    const view = itemView(template, month);
+    if (!progressEditable(template, view.record, month)) {
+      KC.toast('任务已标记完成，请先取消完成再调整进度。', 'error');
+      return;
+    }
+
+    const need = Math.max(1, Math.round(Number(step.requiredCount)) || 1);
+    const progress = (view.record && view.record.stepProgress) || {};
+    const cur = Math.min(need, Math.max(0, Math.round(Number(progress[code])) || 0));
+    const next = Math.min(need, Math.max(0, cur + delta));
+    if (next === cur) return;
+
+    const ok = await KC.confirmArchivedMonth(month, '记录该月任务的攻略进度');
+    if (!ok) { renderList(); return; }
+
+    const isCurrentPeriod = period.id === KC.calc.tasks.periodOf(template, now).id;
+    const at = isCurrentPeriod ? now : backfillAt(month, period);
+
+    try {
+      const before = view.completed;
+      const result = await KC.store.setTaskStepProgress(id, period.id, code, next, at);
+      const label = step.label || step.code;
+
+      if (!before && result.completed) {
+        const msg = completeToast(template, true, now, month, period);
+        KC.toast('节点已达成：' + label + '，' + msg.text, msg.tone);
+      } else {
+        KC.toast('已记录进度：' + label + ' ' + next + ' / ' + need, 'ok');
+      }
+    } catch (err) {
+      KC.toast(err.message, 'error');
+      renderList();
+    }
   }
 
   async function togglePlan(id, checked) {
@@ -603,6 +962,9 @@
     if (!form || form.id !== 'task-form') return;
 
     const fd = new FormData(form);
+    const editing = pageState.editingId ? KC.store.getTaskTemplate(pageState.editingId) : null;
+    // 系统任务只允许改启用状态，不读节点区域（该区域也不会渲染，collectSteps 返回 null）
+    const isSystem = !!(editing && editing.isSystem);
     const input = {
       id: pageState.editingId || undefined,
       name: fd.get('name'),
@@ -614,12 +976,15 @@
       enabled: fd.get('enabled') === 'on',
       defaultInPlan: fd.get('defaultInPlan') === 'on'
     };
+    if (!isSystem) input.steps = collectSteps();
 
-    KC.store.saveTaskTemplate(input).then(function () {
+    KC.store.saveTaskTemplate(input).then(function (saved) {
       pageState.formOpen = false;
       pageState.editingId = null;
       renderForm();
-      KC.toast('已保存任务：' + String(input.name || '').trim(), 'ok');
+      const n = (saved && saved.steps) ? saved.steps.length : 0;
+      KC.toast('已保存任务：' + String(input.name || '').trim() +
+        (isSystem ? '' : (n ? '（' + n + ' 个进度节点）' : '')), 'ok');
     }).catch(function (err) {
       KC.toast(err.message, 'error');
     });
@@ -648,6 +1013,16 @@
       renderForm();
     } else if (act === 'toggle-enabled') {
       toggleEnabled(btn.dataset.id);
+    } else if (act === 'add-step-row') {
+      addStepRow();
+    } else if (act === 'del-step-row') {
+      removeStepRow(btn);
+    } else if (act === 'toggle-steps') {
+      toggleSteps(btn.dataset.id);
+    } else if (act === 'step-plus') {
+      bumpStep(btn.dataset.id, btn.dataset.code, 1);
+    } else if (act === 'step-minus') {
+      bumpStep(btn.dataset.id, btn.dataset.code, -1);
     } else if (act === 'delete-task') {
       deleteTask(btn.dataset.id);
     } else if (act === 'group-plan') {
@@ -739,6 +1114,7 @@
       pageState.editingId = null;
       pageState.month = null;
       pageState.periodPick = {};
+      pageState.expanded = {};
     }
   };
 })(window.KC = window.KC || {});

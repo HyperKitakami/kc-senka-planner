@@ -662,6 +662,92 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .form-row-flags { align-items: center; gap: 20px; }
 
+/* --------------------------------------------------------------------------
+   任务表单：海域攻略进度节点编辑区
+   （页面列表里的 .step-panel 是"记录进度"，这里是"配置节点"，样式刻意区分）
+   -------------------------------------------------------------------------- */
+
+.steps-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.steps-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.steps-editor-count {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.step-edit-list { display: flex; flex-direction: column; gap: 6px; }
+
+.step-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-edit-row input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color .12s, box-shadow .12s;
+}
+
+.step-edit-row input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.step-edit-code {
+  width: 110px;
+  flex-shrink: 0;
+  font-family: var(--mono);
+}
+
+.step-edit-label { flex: 1; min-width: 0; }
+
+.step-edit-need {
+  width: 62px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.step-edit-del {
+  width: 30px; height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step-edit-del:hover { border-color: var(--danger); color: var(--danger); }
+
+.steps-editor .btn { align-self: flex-start; }
+
 .field select {
   height: 38px;
   padding: 0 10px;
@@ -808,6 +894,142 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .task-row.is-done td.cell-name { color: var(--text-muted); }
 .task-row.is-done .cell-num { color: var(--green); }
 .task-row.is-off td { opacity: .55; }
+
+/* --------------------------------------------------------------------------
+   任务进度（海域攻略完成情况）：名字旁的折叠箭头 / 进度角标 / 展开面板
+   -------------------------------------------------------------------------- */
+
+/* 已完成底纹只作用于"已完成且节点全达成"的行，见 renderRow 的 is-step-done */
+.task-row.is-step-done td.cell-name { color: var(--text-muted); }
+.task-row.is-step-done .col-senka { color: var(--green); }
+
+.step-toggle {
+  width: 18px; height: 18px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.step-toggle:hover { background: var(--panel-soft); color: var(--primary-dark); }
+
+.step-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.step-badge.is-full {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.step-badge.is-manual {
+  border-style: dashed;
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+/* 展开行：贴住上一行的底部，不重复画上边框 */
+.task-steps-row td.cell-steps {
+  padding: 0 16px 12px 16px;
+  background: var(--panel-soft);
+}
+
+.step-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.step-panel[data-locked="1"] { opacity: .75; }
+
+.step-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.step-panel-count { font-family: var(--mono); }
+
+.step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 2px;
+  border-top: 1px dashed var(--border);
+  font-size: 13px;
+}
+
+.step-row:first-of-type { border-top: 0; }
+
+.step-label { color: var(--text); }
+
+.step-row.is-done .step-label { color: var(--text-muted); }
+
+.step-need {
+  margin-left: 6px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.step-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.step-btn {
+  width: 22px; height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-dark); }
+.step-btn:disabled { cursor: not-allowed; opacity: .45; }
+
+.step-count {
+  min-width: 44px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.step-row.is-done .step-count { color: var(--green); }
+
+.step-hint {
+  margin: 8px 0 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
 
 /* --------------------------------------------------------------------------
    规划页：口径切换 / 进度条 / 构成明细 / 规划池
