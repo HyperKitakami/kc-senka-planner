@@ -971,6 +971,35 @@
   }
 
   /**
+   * 内置 EX 任务的展示顺序：先按代号前缀（Bq 在 By 前），再按代号数字大小。
+   * 期望 Bq2 → Bq7 → Bq8 → Bq10 → Bq11 → Bq12 → Bq13 → By9 → By10。
+   *
+   * 为什么不用现成的顺序：任务列表默认保持模板入库顺序，而名称列显示的是游戏内
+   * 完整任务名（`Bq11 …` / `Bq2 …`），照字符串排会得到 Bq11 → Bq2 → Bq13 这种
+   * 「按字典序」的乱序。代号里的数字才是真正的先后，所以这里单独排一次。
+   *
+   * 代号取自模板 id（`sys-ex-<code>`，如 sys-ex-bq2）；解析不出的排在最后，
+   * 且**保持原相对顺序**（用户自建 EX 任务不会出现在这张卡片，仅作兜底）。
+   */
+  function exSortKey(template) {
+    const m = /^sys-ex-([a-z]+)(\d+)$/.exec(String((template && template.id) || ''));
+    if (!m) return null;
+    return { prefix: m[1], num: Number(m[2]) };
+  }
+
+  function sortExItems(items) {
+    return items.slice().sort(function (a, b) {
+      const ka = exSortKey(a.template);
+      const kb = exSortKey(b.template);
+      if (!ka && !kb) return 0;          // 都不认识 ⇒ 保持原序
+      if (!ka) return 1;                 // 认不出的沉底
+      if (!kb) return -1;
+      if (ka.prefix !== kb.prefix) return ka.prefix < kb.prefix ? -1 : 1;
+      return ka.num - kb.num;
+    });
+  }
+
+  /**
    * 「预设 EX 任务」卡片。
    *
    * 位置由 renderList 控制（紧跟 EO 卡片之后），这里只负责内容。
@@ -978,8 +1007,9 @@
    * 所以跟着卡片走，而不是像 EO 那样单独一个面板（`#task-poi-slot`）。
    */
   function renderExCard(items, poolSet, month) {
-    const done = items.filter(function (it) { return it.completed; }).length;
-    const active = items.filter(function (it) { return it.template.enabled !== false; });
+    const rows = sortExItems(items);
+    const done = rows.filter(function (it) { return it.completed; }).length;
+    const active = rows.filter(function (it) { return it.template.enabled !== false; });
     const earned = U.round2(active.filter(function (it) { return it.completed; })
       .reduce(function (s, it) { return s + (Number(it.template.senkaValue) || 0); }, 0));
 
@@ -992,7 +1022,7 @@
       '<div class="panel-head">' +
         '<h2>' + U.escapeHtml(EX_CARD_TITLE) + '</h2>' +
         '<div class="panel-tools">' +
-          '<span class="panel-count">已完成 ' + done + ' / ' + items.length +
+          '<span class="panel-count">已完成 ' + done + ' / ' + rows.length +
             ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="1">全选规划</button>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="0">取消全选</button>' +
@@ -1010,7 +1040,7 @@
           '<th class="cell-check">参与规划</th>' +
           '<th class="actions">操作</th>' +
         '</tr></thead>' +
-        '<tbody>' + items.map(function (it) { return renderRow(it, poolSet, month); }).join('') + '</tbody>' +
+        '<tbody>' + rows.map(function (it) { return renderRow(it, poolSet, month); }).join('') + '</tbody>' +
       '</table></div>' +
       '</div>';
   }

@@ -78,3 +78,52 @@ Kancolle Senka Planner 是一个完全本地运行的 HTML 工具，用于《艦
 ### 设计理念
 
 - 本项目定位为长期陪伴型工具，重点在于帮助玩家持续积累数据、进行规划与复盘，而不是追求复杂的数据分析或自动化采集。所有功能均应优先服务于长期记录、查询和规划。
+
+---
+
+# 技术形态
+
+## 1. 技术选型
+
+- 原生 HTML / CSS / JavaScript，**无框架、无构建步骤、无包管理**
+- 数据层：IndexedDB，封装于 `js/core/db.js`
+- 图表：[`vendor/chart.umd.min.js`](../vendor/chart.umd.min.js)（Chart.js 4.5.1，MIT，本地引入）
+- 统计结果 **一律运行时计算，绝不落库**（见 `03_data.md` §1.2）
+- 程序版本号在 `js/core/version.js`（无 `package.json`，故需手工与 [`CHANGELOG.md`](../CHANGELOG.md)、git tag 保持同步）
+
+### 为什么不用 ES Modules
+
+浏览器会以 CORS 为由拦截 `file://` 下的模块加载。为了保住「双击 `index.html` 即用」这个体验，项目采用 **经典脚本 + 全局命名空间 `window.KC`**，在 `index.html` 中按依赖顺序引入。代价是新增文件时必须手动维护 `<script>` 顺序（见 [`AGENTS.md`](../AGENTS.md)）。
+
+---
+
+## 2. 目录结构
+
+```text
+index.html                 唯一入口，按依赖顺序引入全部脚本
+css/style.css              :root 与 :root[data-theme="dark"] 两套配色变量
+js/core/   utils            通用工具
+           version          程序版本号（唯一代码载体）
+           periods          周期解析与两套时间边界
+           schema           数据结构、schemaVersion、迁移链
+           db               IndexedDB 封装（含导入 / 合并 / 导出）
+           store            内存状态 + 自动保存 + 订阅
+           localLayer       本机轻量存储（localStorage，置于持久数据模型之外）
+           poiSource        poi 数据文件解析（纯函数）
+           poiData          poi 数据接入 IO 外壳（选文件 / 落快照 / 取数 / 差异）
+js/data/   defaultTasks     内置 EO / EX 任务模板
+js/calc/   stats            月度统计
+           tasks            任务周期与战果汇总
+           plan             规划：实际 / 规划战果、所需日均、预测
+           analysis         逐日序列、月度比较、战果构成
+           periods          周期查询：任务刷新 / 战果结算两套边界的剩余时间
+js/ui/     dom / feedback    DOM 辅助、Toast 与确认弹窗
+           export           导出与下载
+           nav / router      导航与 hash 路由
+           theme             主题切换
+           components        跨页面复用组件（含首页卡片注册表与网格列数计算）
+           pages/*           9 个页面
+js/main.js                 入口
+vendor/                    第三方本地依赖
+docs/                      需求与设计文档（改前须确认）
+```
