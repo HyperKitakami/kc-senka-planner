@@ -329,12 +329,13 @@
   function aboutPanel() {
     return '<div class="panel">' +
       '<div class="panel-head"><h2>关于</h2></div>' +
-      '<p class="panel-desc">Kancolle Senka Planner —— 完全本地运行的《艦隊これくしょん》战果记录、规划与统计工具。' +
+      '<p class="panel-desc">Kancolle Senka Planner —— 可完全本地运行的《艦隊これくしょん》战果记录、规划与统计工具。' +
         '无需服务器、无需数据库，双击 <code>index.html</code> 即可离线使用。</p>' +
       '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
         '<tr><td>程序版本</td><td>' + U.escapeHtml(KC.VERSION || '未知') + '</td></tr>' +
         '<tr><td>数据结构版本</td><td>v' +
           U.escapeHtml(String(KC.schema.dataVersion(KC.store.state.config))) + '</td></tr>' +
+        '<tr><td>GitHub 仓库</td><td><a href="https://github.com/HyperKitakami/kc-senka-planner" target="_blank">https://github.com/HyperKitakami/kc-senka-planner</a></td></tr>' +
       '</tbody></table></div>' +
       '<p class="form-hint">数据默认保存在本机浏览器中。浏览器清理站点数据会一并清除，请定期在「数据管理」中导出 JSON 备份。' +
         '图表由本地引入的 Chart.js 渲染，程序自身不访问任何外部网络；' +

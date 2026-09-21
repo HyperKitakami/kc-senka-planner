@@ -710,7 +710,7 @@
           '<div class="form-row">' +
             '<label class="field field-grow">' +
               '<span class="field-label">任务名称</span>' +
-              '<input type="text" name="name" maxlength="40" placeholder="例如 夏季活动 E1" value="' +
+              '<input type="text" name="name" maxlength="40" placeholder="例如 2025 梅雨活动" value="' +
                 U.escapeHtml(t.name) + '"' + (editing && editing.isSystem ? ' disabled' : '') + ' required>' +
             '</label>' +
             '<label class="field">' +
