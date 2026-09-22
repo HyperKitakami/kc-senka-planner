@@ -476,15 +476,25 @@
     return container.querySelector('input[data-act="cal-input"][data-date="' + date + '"]');
   }
 
-  function focusCell(date) {
-    const el = cellInput(date);
-    if (el && el.focus) { el.focus(); if (el.select) el.select(); }
-  }
-
   function nextDateKey(date) {
     const d = U.parseDateKey(date);
     d.setDate(d.getDate() + 1);
     return U.toDateKey(d);
+  }
+
+  /**
+   * 回车后真正能接住焦点的「下一格」；接不住则返回 null。
+   *
+   * ⚠️ 两种接不住的情况都必须当 null 处理，否则回车会**静默丢掉这一格的输入**
+   *   （本格不失焦 ⇒ `change` 不触发 ⇒ 不落库）：
+   *     ① 月末最后一格：日历里根本没有下一天；
+   *     ② 下一天是未来日期：格子存在但 `disabled`，`focus()` 是空操作。
+   *   本月日历是连续的一整月，所以下一天不可用 ⇒ 再往后都不可用，直接收工。
+   */
+  function nextFocusableCell(date) {
+    const el = cellInput(nextDateKey(date));
+    if (!el) return null;
+    return el.disabled ? null : el;
   }
 
   function markCell(input, hasValue) {
@@ -648,9 +658,13 @@
     const el = e.target;
     if (!el || !el.dataset || el.dataset.act !== 'cal-input') return;
     if (e.key !== 'Enter') return;
-    // 回车 = 保存并跳到下一格：把焦点移到下一格会让本格触发 change 从而落库
+    // 回车 = 保存并跳到下一格：把焦点移到下一格会让本格触发 change 从而落库。
+    // ⚠️ 但没有可接焦点的下一格时（月末 / 下一天是未来日期），本格不会失焦、
+    //    change 不触发 —— 必须显式保存，否则这一格的输入被静默丢掉。
     e.preventDefault();
-    focusCell(nextDateKey(el.dataset.date));
+    const next = nextFocusableCell(el.dataset.date);
+    if (next) { next.focus(); if (next.select) next.select(); return; }
+    saveCalendarCell(el);
   }
 
   function scrollToForm() {
