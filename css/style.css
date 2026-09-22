@@ -1426,29 +1426,38 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   margin-bottom: 8px;
 }
 
+/* 同步差异列表（EO 同步面板与 EX 季常同步区共用）。
+   与「战果线对比」图例同一套处理：每项自成一小块，块内紧凑、块间靠底色与描边隔断。
+   ⛔ 别改回 `grid` + `minmax(170px, 1fr)` —— 只列 2~5 项时列会被拉宽到几百像素，
+   再配上 `poi-eo-senka` 的 `margin-left: auto`，任务代号与战果值就被甩到两端
+   （列满 9 项时才看不出问题，属于偶发、更难排查）。 */
 .poi-eo-list {
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 5px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
 }
 
 .poi-eo-list li {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-size: 13px;
-  padding: 3px 0;
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-soft);
 }
 
+/* 状态角标（待勾选 / 仅提示）：描边交给外层小块，这里只留底色，
+   避免「块里套块」两道边框。 */
 .poi-chip-badge {
   flex: none;
   font-size: 11px;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid var(--border-strong);
   color: var(--text-faint);
-  background: var(--panel);
+  background: var(--tag-bg);
 }
 
 .poi-eo-name {
@@ -1458,7 +1467,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 
 .poi-eo-senka {
-  margin-left: auto;
+  /* 与代号之间只留一道小缝（主要间距由 li 的 gap 给） */
+  margin-left: 2px;
   color: var(--senka-planned);
   font-variant-numeric: tabular-nums;
 }
