@@ -211,16 +211,22 @@
 
   /**
    * MonthlyContext 默认结构。
-   * planningPool：规划池的当前选择（仅保存选择本身，不保存历史快照）。
-   * 该字段为可选字段，读取时以运行时默认值兜底，因此不触发版本升级。
+   *
+   * ⛔ **不要给 `planningPool` 填默认值**（哪怕是 `[]`）：
+   *   `store.getEffectivePlanningPool` / `calc.plan.displayPoolIds` 都用
+   *   `Array.isArray(ctx.planningPool)` 区分「用户选过（允许是空池）」与
+   *   「还没选过（回落到默认池）」。一旦在这里填了 `[]`，只保存「月目标 / 继承战果」
+   *   也会顺带落一个空池，该月的规划池就被当成"用户选了空" ⇒ 默认池丢失、
+   *   已规划战果归零（2026-09-23 修的就是这个）。
+   *   「用户主动清空规划池」走 `setPlanningPool(month, [])`，那条路径会显式带上 `[]`。
+   *   该字段是可选字段，缺失时由运行时兜底，因此不触发版本升级。
    */
   function createMonthlyContext(month) {
     return {
       month: month,
       inheritedSenka: 0,
       targetSenka: null,
-      note: '',
-      planningPool: []
+      note: ''
     };
   }
 
