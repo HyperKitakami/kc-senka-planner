@@ -1667,6 +1667,18 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   text-align: center;
 }
 
+/* 数据分析页「月度比较」+「战果构成」并排。
+   ⚠️ 这两块是页面上**唯一**的 `.dash-split` 使用者（首页早已改用 card-grid + span），
+   而本规则此前一直缺失 —— 两块被当普通块级元素上下堆着，白占一屏高度。
+   窄屏由 auto-fit 自动堆叠；只给 column-gap，纵向间距仍由 .panel 自己的 margin-bottom 出，
+   这样堆叠时不会变成「18 + 18」的双倍间距。 */
+.dash-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  column-gap: 18px;
+  align-items: start;
+}
+
 .comp-list {
   list-style: none;
   margin: 14px 0 0;
