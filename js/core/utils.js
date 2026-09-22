@@ -82,6 +82,28 @@
     return Math.round((Number(value) || 0) * 100) / 100;
   }
 
+  /**
+   * 解析「必填」数字输入（表单里的战果值等）。
+   *
+   * ⛔ **别直接用 `Number(raw)`**：`Number('')` / `Number('   ')` / `Number(null)` 全是 `0`，
+   * 会把"没填"静默存成 0（records / tasks / archive 三个表单都踩过）。
+   * 留空、非法、负数一律抛错，由调用方 catch 后 toast 给用户。
+   *
+   * 可选字段请照 `planning.js` 的写法自行判空（空 ⇒ `null`），不要用这个函数。
+   *
+   * @param {*} raw 表单原始值（字符串 / null / undefined）
+   * @param {string} label 字段名，用于错误文案（如「当日出击战果」）
+   * @returns {number} 已保留 2 位小数的数值
+   */
+  function requiredNumber(raw, label) {
+    const name = label || '数值';
+    const text = (raw === null || raw === undefined) ? '' : String(raw).trim();
+    if (text === '') throw new Error('请填写' + name + '。');
+    const n = Number(text);
+    if (!isFinite(n) || n < 0) throw new Error(name + '必须是不小于 0 的数字。');
+    return round2(n);
+  }
+
   KC.utils = {
     pad2: pad2,
     toDateKey: toDateKey,
@@ -96,6 +118,7 @@
     escapeHtml: escapeHtml,
     uid: uid,
     clamp: clamp,
-    round2: round2
+    round2: round2,
+    requiredNumber: requiredNumber
   };
 })(window.KC = window.KC || {});

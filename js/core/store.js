@@ -167,13 +167,11 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new Error('日期格式不正确，应为 YYYY-MM-DD。');
     }
-    const raw = Number(input && input.sortieSenka);
-    if (!isFinite(raw) || raw < 0) {
-      throw new Error('当日出击战果必须是不小于 0 的数字。');
-    }
+    // 必填数字：留空要报错，不能靠 Number('') === 0 静默存成 0
+    const sortieSenka = KC.utils.requiredNumber(input && input.sortieSenka, '当日出击战果');
     return {
       date: date,
-      sortieSenka: KC.utils.round2(raw),
+      sortieSenka: sortieSenka,
       note: String((input && input.note) || '').trim()
     };
   }
@@ -235,10 +233,8 @@
     const name = String((input && input.name) || '').trim();
     if (!name) throw new Error('任务名称不能为空。');
 
-    const senkaValue = Number(input && input.senkaValue);
-    if (!isFinite(senkaValue) || senkaValue < 0) {
-      throw new Error('战果值必须是不小于 0 的数字。');
-    }
+    // 必填数字：留空要报错，不能靠 Number('') === 0 静默存成 0
+    const senkaValue = KC.utils.requiredNumber(input && input.senkaValue, '战果值');
 
     const resetCycle = KC.schema.RESET_CYCLES.indexOf(input && input.resetCycle) >= 0
       ? input.resetCycle : 'MONTHLY';
@@ -659,9 +655,8 @@
     const month = String((input && input.month) || '').trim();
     if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('月份格式不正确，应为 YYYY-MM。');
 
-    const finalRaw = Number(input && input.finalSenka);
-    if (!isFinite(finalRaw) || finalRaw < 0) throw new Error('最终战果必须是不小于 0 的数字。');
-    const finalSenka = KC.utils.round2(finalRaw);
+    // 必填数字：留空要报错，不能靠 Number('') === 0 静默存成 0
+    const finalSenka = KC.utils.requiredNumber(input && input.finalSenka, '最终战果');
 
     let rank = null;
     const rankRaw = input && input.rank;
