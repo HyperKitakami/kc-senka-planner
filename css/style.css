@@ -1688,22 +1688,28 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-size: 12px;
 }
 
-/* 「战果线对比」的图例（折线下方，展示各线当前值） */
+/* 「战果线对比」的图例（折线下方，展示各线当前值）。
+   每项自成一小块：块内「圆点 + 名称 + 当前值」紧凑相邻，块与块之间靠底色与描边隔断。
+   ⛔ 别改回 `grid` + `1fr` 铺满整行 —— 列被拉到几百像素宽时，名称与数值会被甩到
+   卡片两端（`em` 的 `margin-left: auto` 更是把数值顶到行尾），读一行要横跨半屏。 */
 .rank-legend {
   list-style: none;
   margin: 14px 0 0;
   padding: 14px 0 0;
   border-top: 1px solid var(--border);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
 }
 
 .rank-legend li {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 2px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-soft);
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -1720,7 +1726,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-style: normal;
   font-weight: 600;
   color: var(--text);
-  margin-left: auto;
+  /* 与名称之间只留一道小缝（主要间距由 li 的 gap 给） */
+  margin-left: 2px;
   font-variant-numeric: tabular-nums;
 }
 
