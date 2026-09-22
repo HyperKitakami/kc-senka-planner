@@ -261,13 +261,6 @@
   /* ------------------------------------------- poi EO 批量同步 */
   const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\achieve\\achieve.json';
 
-  /** 同步面板的 DOM 槽（在 buildShell 里建一次，之后只刷 innerHTML） */
-  function renderPoiSlot() {
-    const host = slot('task-poi-slot');
-    if (!host) return;
-    host.innerHTML = poiPanel();
-  }
-
   /** 「预设 EX 任务」卡片里的 poi 季常同步区 */
   function renderPoiExSlot() {
     const host = slot('task-ex-poi-slot');
@@ -317,6 +310,8 @@
   /**
    * poi 同步面板。
    *
+   * 位置由 renderList 控制（紧贴在 EO 卡片正上方），这里只负责内容。
+   *
    * 只做**批量勾选**（poi 说完成 → 我们也勾上），不做自动取消：
    * poi 的 rankuex 只反映"当前血条在不在"，而战果归属有 21:00 边界，
    * 自动取消会把已经计入历史归属的战果抹掉。反向差异只列出来提示。
@@ -326,7 +321,7 @@
     const month = planningMonth();
 
     if (!diff) {
-      return '<div class="panel poi-panel">' +
+      return '<div class="panel poi-panel" id="task-poi-panel">' +
         '<div class="panel-head"><h2>poi EO 同步</h2>' +
           '<span class="panel-count">该月无快照</span></div>' +
         '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
@@ -368,7 +363,7 @@
       : '<p class="form-hint">共 ' + diff.same.length + ' 项状态一致' +
         (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') + '。</p>';
 
-    return '<div class="panel poi-panel">' +
+    return '<div class="panel poi-panel" id="task-poi-panel">' +
       '<div class="panel-head"><h2>poi EO 同步</h2>' +
         '<span class="panel-count">' + U.escapeHtml(U.monthLabel(month)) + '</span></div>' +
       body + foot +
@@ -418,7 +413,8 @@
     } catch (err) {
       KC.toast(err.message, 'error');
     }
-    renderPoiSlot();
+    // 面板随任务列表一起渲染，这里显式刷一次（批量写入已广播过 change）
+    renderList();
   }
 
   /* ----------------------------------------- poi 季常（EX）批量同步 */
@@ -1012,7 +1008,7 @@
    *
    * 位置由 renderList 控制（紧跟 EO 卡片之后），这里只负责内容。
    * 卡片里额外挂一块 poi 季常同步区 —— 它只服务这批内置季常任务，
-   * 所以跟着卡片走，而不是像 EO 那样单独一个面板（`#task-poi-slot`）。
+   * 所以跟着卡片走，而不是像 EO 那样单独一个面板（`#task-poi-panel`）。
    */
   function renderExCard(items, poolSet, month) {
     const rows = sortExItems(items);
@@ -1132,8 +1128,14 @@
     });
     if (exGroup && ordered.indexOf(exGroup) < 0) ordered.push(exGroup);
 
+    // 「poi EO 同步」面板紧贴在 EO 卡片**正上方** —— 它只服务 EO 任务，
+    // 放在页顶会离要勾选的那批任务太远（EX 的同步区则嵌在 EX 卡片内部）。
+    // 没有 EO 分组时不渲染：此时没有可比对的任务，面板只剩噪音。
     host.innerHTML = toolbar +
-      ordered.map(function (g) { return renderGroup(g, view.poolSet, month); }).join('');
+      ordered.map(function (g) {
+        return (g.group === 'EO' ? poiPanel() : '') +
+          renderGroup(g, view.poolSet, month);
+      }).join('');
   }
 
   /* -------------------------------------------------------------- 交互 */
@@ -1469,15 +1471,12 @@
   /* -------------------------------------------------------------- 生命周期 */
 
   function buildShell() {
-    // ⚠️ 面板内容**直接写进外壳字符串**（而不是先建空槽再填充）：
-    //    ① 首屏不会出现"空槽 → 下一帧才有内容"的闪烁；
-    //    ② 假 DOM 不解析 innerHTML，槽位只是个缓存占位元素，往槽里写的内容
-    //       在容器字符串里看不到。把它放进外壳，页面级测试才能断言到内容。
-    //    后续刷新（renderPoiSlot）才走槽位，避免整页重绘。
+    // 外壳只建一次，之后各块按槽位分别刷新，避免勾选任务时把正在填写的表单冲掉。
+    // ⚠️ poi EO 同步面板**不在外壳里** —— 它要落在 EO 卡片正上方（见 renderList），
+    //    因此随任务列表一起渲染，断言它请读 `#task-list-slot`。
     pageState.container.innerHTML =
       pageHead() +
       '<div class="card-grid" id="task-summary"></div>' +
-      '<div id="task-poi-slot">' + poiPanel() + '</div>' +
       '<div id="task-notice-slot"></div>' +
       '<div id="task-form-slot"></div>' +
       '<div id="task-list-slot"></div>';
@@ -1515,8 +1514,8 @@
       unsubscribe = KC.store.subscribe(function (type) {
         if (type !== 'change') return;
         renderSummary();
-        renderPoiSlot();
-        // EX 的 poi 同步区挂在列表里的「预设 EX 任务」卡片内，随 renderList 一起刷新
+        // poi EO 同步面板挂在列表里（EO 卡片上方），EX 的同步区挂在
+        // 「预设 EX 任务」卡片内，两者都随 renderList 一起刷新
         renderList();
         if (pageState.formOpen) renderForm();
       });
