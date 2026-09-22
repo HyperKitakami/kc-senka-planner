@@ -44,8 +44,8 @@
    * 内置任务不可编辑（系统任务口径），与普通卡片混排会显得很别扭。
    */
   const EX_CARD_TITLE = '预设 EX 任务';
-  const EX_CARD_HINT = '固定任务战果（季常 / 年常）。季常可经 poi 季常清单批量勾选；' +
-    '年常在 poi 数据里没有完成标记，需手动勾选。';
+  const EX_CARD_HINT = '固定任务战果（季常 / 年常）。季常可经 poi 季常清单批量勾选' +
+    '（poi 只记录「当前战果月」内的完成）；年常在 poi 数据里没有完成标记，需手动勾选。';
   const EX_CARD_UNKNOWN =
     '以下 poi 季常项在本工具里找不到对应任务（可能已被停用或删除），本次不会处理。';
 
@@ -427,8 +427,12 @@
    * poi 季常同步区（「预设 EX 任务」卡片内）。
    *
    * 与 EO 面板同口径：**只正向勾选，绝不自动取消**。
-   * 数据来自 poi 的 `zName` / `zcleartslist`，只覆盖季常 ——
-   * 年常（AL / 机动）在 poi 数据里没有对应字段，只能手动勾选。
+   * 数据来自 poi 的 `zName` / `zcleartslist`（`zcleartslist[i]` = 第 i 项的**完成时刻**，
+   * `0` = 未完成），只覆盖季常 —— 年常（AL / 机动）在 poi 数据里没有对应字段，只能手动勾选。
+   *
+   * ⚠️ poi **每个战果月**都会把 `zcleartslist` 重置为全 0（它只用这个字段算当月战果增量），
+   * 所以清单只说明「**当前战果月内**完成过」，不覆盖本季更早的月份 —— 文案必须讲清楚，
+   * 否则用户会以为"poi 说未完成 = 本季没做"。
    */
   function poiExPanel() {
     const diff = poiExDiff();
@@ -452,14 +456,15 @@
     } else {
       body = '<div class="poi-diff">' +
         (c.done
-          ? '<div class="poi-diff-block"><div class="poi-diff-head">poi 已完成，本工具未勾选（' +
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">poi 显示本战果月已完成，本工具未勾选（' +
               c.done + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.done, '待勾选') + '</ul></div>'
           : '') +
         (c.undone
-          ? '<div class="poi-diff-block"><div class="poi-diff-head">本工具已勾选，poi 显示未完成（' +
+          ? '<div class="poi-diff-block"><div class="poi-diff-head">本工具已勾选，poi 本战果月无完成记录（' +
               c.undone + ' 项）</div><ul class="poi-eo-list">' + poiDiffRows(diff.undone, '仅提示') + '</ul>' +
-              '<p class="form-hint">poi 的季常清单是手工维护的，可能尚未更新。这些任务本工具已标记完成，' +
-              '可能已计入战果归属 —— 不会自动取消，请自行确认后手动处理。</p></div>'
+              '<p class="form-hint">poi 的季常清单每个战果月重置，只记录当月完成的项 —— ' +
+              '这些任务可能是本季更早的月份完成的，也可能是 poi 侧数据还没更新。' +
+              '它们本工具已标记完成、可能已计入战果归属，不会自动取消，请自行确认后手动处理。</p></div>'
           : '') +
         '</div>';
     }
@@ -478,8 +483,10 @@
             '<span class="poi-status-line">' + stat + '</span>' +
           '</div>'
         : '<p class="poi-status-line">' + stat + '</p>') +
-      '<p class="form-hint">数据来自 poi 的季常任务清单（<code>zName</code> / <code>zcleartslist</code>），' +
-        '仅覆盖季常；年常（AL / 机动）poi 未提供完成标记，请在下方列表手动勾选。' +
+      '<p class="form-hint">数据来自 poi 的季常任务清单（<code>zName</code> / <code>zcleartslist</code>，' +
+        '后者是每项的完成时刻，0 表示未完成）。⚠️ poi 每个战果月会重置这份清单，' +
+        '所以它只反映「当前战果月内」的完成 —— 本季更早月份完成的季常不会出现在这里，' +
+        '请自行核对后手动勾选。仅覆盖季常；年常（AL / 机动）poi 未提供完成标记，请在下方列表手动勾选。' +
         '快照存于本机轻量存储，不参与导入导出。</p>' +
       '</div>';
   }
@@ -500,9 +507,10 @@
       message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项季常任务标记为已完成' +
         '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
         (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
-        '\n\n依据是 poi 的季常任务清单。已有进度节点的任务会保留其进度；' +
-        '勾选后仍可逐项取消完成。季常战果有末日 13:00 归属边界，' +
-        '在季度第三月此时勾选会直接失效。',
+        '\n\n依据是 poi 的季常任务清单（zcleartslist 记录每项的完成时刻；' +
+        'poi 每个战果月会重置这份清单，所以只覆盖「当前战果月内」完成的项）。' +
+        '已有进度节点的任务会保留其进度；勾选后仍可逐项取消完成。' +
+        '季常战果有末日 13:00 归属边界，在季度第三月此时勾选会直接失效。',
       okText: '勾选 ' + diff.done.length + ' 项'
     });
     if (!ok) return;

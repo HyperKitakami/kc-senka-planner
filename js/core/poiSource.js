@@ -29,10 +29,15 @@
 
      rankuex   string[]        **未完成**的 EO 海域列表（来自 selectors.es）
      ignoreex  {code:bool}     用户手动忽略的海域，不参与统计
-     extraSenkalist number[]   三态人工标记 0=已完成/1=未完成/2=进行中；
-                               ⚠️ 与血条完成**无关**，本模块不使用
+     extraSenkalist number[]   三态**人工标记**（poi 界面上点一下就循环）：0=计划攻略 /
+                               1=计划不攻略（默认）/ 2=已完成。
+                               ⚠️ 它是 poi 的**计划**标记，本模块不使用
      extraSenka 相关：zcleartslist / zId / zValue / zName
-                               额外战果（EO 之外）的清单
+                               额外战果（EO 之外的季常任务）的清单，同序四表
+     zcleartslist[i]           第 i 项的**完成时刻**（poi 收到 clearitemget 时写入
+                               `new Date()`，JSON 里序列化成 ISO 字符串）；
+                               **0 = 未完成**。⚠️ 每个战果月重置（poi 用它算当月战果增量）
+     zId / zValue / zName      任务请求 id / 战果值 / 名称（poi 侧写法）
 
    ── 两个易错点 ──────────────────────────────────────────────
      1. **myhis 跨月污染**：myhis 的键是 dateNo（月初重置），若直接整体差分，
@@ -63,8 +68,8 @@
     '4-5': 180, '5-5': 200, '5-6': 225, '6-5': 250
   };
 
-  /** extraSenkalist 三态 */
-  const QUEST_STATE = { DONE: 0, TODO: 1, DOING: 2 };
+  /** extraSenkalist 三态（人工标记，**不是**完成状态）：0=计划攻略 / 1=计划不攻略 / 2=已完成 */
+  const QUEST_STATE = { PLAN: 0, SKIP: 1, DONE: 2 };
 
   /* ------------------------------------------------------------- 工具函数 */
 
@@ -547,14 +552,39 @@
   /* --------------------------------------------------------- §8 任务状态 */
 
   /**
-   * poi 侧的「额外战果 / 任务类」完成状态。
+   * `zcleartslist` 的条目是否代表「已完成」。
    *
-   * zcleartslist[i] === 0 表示第 i 项已完成（poi 语义：0 = 已完成，非 0 = 推进中）。
-   * zName / zValue / zId 与之同序。
+   * poi 写入的是**完成时刻**（`new Date()` → JSON 里是 ISO 字符串），
+   * **`0` / 空 = 未完成**。⚠️ 注意 `Date.parse('0')` 在 V8 里是合法日期
+   * （2000-01-01），所以必须先显式挡掉 0 与空串，不能只靠 `Date.parse`。
+   */
+  function isClearedAt(v) {
+    if (v === null || v === undefined) return false;
+    if (typeof v === 'number') return isFinite(v) && v > 0;
+    const s = String(v).trim();
+    if (!s || s === '0') return false;
+    return isFinite(Date.parse(s));
+  }
+
+  /**
+   * poi 侧的「额外战果 / 季常任务」完成状态。
    *
-   * ⚠️ 这是 poi 里手工维护的**季度任务战果**清单（Z作战、三川、泊地…），
-   * 与项目里的「季常任务」并不一一对应，功能 3 只把它作为**弱提示**，
-   * 不做自动写入。本函数只负责把它结构化出来。
+   * ⛔ **判定方向（曾写反过，勿回退）**：`zcleartslist[i]` 是第 i 项的**完成时刻**
+   * （poi 收到 `api_req_quest/clearitemget` 时写入 `new Date()`），
+   * **非 0 / 非空即已完成；`0` = 未完成**。
+   * 早期实现把它当成"已完成清单"（`=== 0` 即完成）—— 方向完全反了，
+   * 于是**全部季常任务**都被判成已完成，同步面板会一次性勾错 7 项。
+   *
+   * ⚠️ **口径范围**：poi 在**每个战果月**把 `zcleartslist` 重置为全 0
+   * （它自己只用这个字段算当月战果增量），所以这里能回答的只是
+   * 「**当前战果月内**是否完成过」，**不覆盖本季更早的月份**。
+   * 因此本函数只作正向提示来源，UI 必须把这个范围讲清楚。
+   *
+   * ⚠️ **不使用 `extraSenkalist`**：它是 poi 界面上的三态**计划**标记
+   * （0=计划攻略 / 1=计划不攻略 / 2=已完成），同样是人工可点、每月重置的，
+   * 拿它判完成会把"计划攻略"误当"已完成"。此处只把它原样透出供 UI 参考。
+   *
+   * zName / zValue / zId 与 zcleartslist 同序。
    */
   function extraQuestStatus(raw) {
     const root = isObj(raw) ? raw : {};
@@ -566,15 +596,18 @@
 
     const list = [];
     for (let i = 0; i < names.length; i++) {
-      const mark = num(marks[i], QUEST_STATE.TODO);
+      const mark = num(marks[i], QUEST_STATE.SKIP);
+      const clearedAt = (cleared[i] === undefined) ? 0 : cleared[i];
       list.push({
         index: i,
         id: num(ids[i], 0),
         name: String(names[i]),
         senka: num(values[i], 0),
-        done: num(cleared[i], 1) === 0,
+        done: isClearedAt(clearedAt),
+        clearedAt: clearedAt,
         state: mark,
-        doing: mark === QUEST_STATE.DOING
+        planned: mark === QUEST_STATE.PLAN,
+        markedDone: mark === QUEST_STATE.DONE
       });
     }
     return {
