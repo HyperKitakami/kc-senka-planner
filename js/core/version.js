@@ -15,7 +15,7 @@
   'use strict';
 
   /** 程序版本，形如 v0.3.0（与 CHANGELOG.md 的「当前版本」、git tag 保持一致）。 */
-  var VERSION = 'v0.3.1';
+  var VERSION = 'v0.3.2';
 
   /** 去掉前导 v 的版本号，便于需要纯数字形式的场合。 */
   var VERSION_NUM = VERSION.replace(/^v/, '');
