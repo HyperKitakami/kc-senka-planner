@@ -19,6 +19,19 @@
     TASK: 13    // 任务战果：本月末日 13:00
   };
 
+  /**
+   * 战果归属**起始**时刻的小时数（落在上月末日当天）。
+   * 出击 / 任务与各自的截止小时相同，区间长度正好一个月；
+   * ⛔ EO 例外：截止是本月末日 21:00，起点却是**上月末日 23:00**
+   * —— 血条 23:00 才复活，末日 21:00～23:00 打掉的 EO 不给战果（docs/03_data.md §7.2）。
+   * 所以 EO 的起点**不能**复用 ATTRIBUTION_HOUR.EO，否则整条区间会多算 2 小时。
+   */
+  const ATTRIBUTION_START_HOUR = {
+    SORTIE: 21,
+    EO: 23,
+    TASK: 13
+  };
+
   /** 任务刷新边界（新周期开始时刻，北京时间小时数） */
   const REFRESH_HOUR = {
     DAILY: 4,
@@ -35,9 +48,15 @@
     return new Date(p[0], p[1] - 1, U.daysInMonth(monthKey), hour, 0, 0, 0);
   }
 
-  /** 某月的战果归属开始时刻（上月末日 21:00） */
+  /**
+   * 某月的战果归属开始时刻（默认出击口径：上月末日 21:00；EO 为上月末日 23:00）。
+   * ⚠️ 起点小时取 ATTRIBUTION_START_HOUR，**不是** ATTRIBUTION_HOUR —— 两者只有 EO 不同。
+   */
   function attributionStart(monthKey, kind) {
-    return attributionEnd(U.addMonths(monthKey, -1), kind);
+    const k = kind || 'SORTIE';
+    const prev = U.addMonths(monthKey, -1);
+    const p = String(prev).split('-').map(Number);
+    return new Date(p[0], p[1] - 1, U.daysInMonth(prev), ATTRIBUTION_START_HOUR[k], 0, 0, 0);
   }
 
   /**
@@ -259,6 +278,7 @@
 
   KC.periods = {
     ATTRIBUTION_HOUR: ATTRIBUTION_HOUR,
+    ATTRIBUTION_START_HOUR: ATTRIBUTION_START_HOUR,
     REFRESH_HOUR: REFRESH_HOUR,
     QUARTER_START_MONTH: QUARTER_START_MONTH,
     attributionEnd: attributionEnd,
