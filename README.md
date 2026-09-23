@@ -18,6 +18,8 @@
 
 没有安装步骤，不需要服务器，也不需要联网。推荐使用新版 Chrome / Edge / Firefox。
 
+也可以直接使用[在线实例](https://senka.ro500.moe "https://senka.ro500.moe")
+
 ---
 
 ## ⚠️ 先看这里：数据存在哪里
