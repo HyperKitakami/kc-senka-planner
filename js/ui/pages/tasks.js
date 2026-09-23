@@ -1319,14 +1319,21 @@
     try {
       const month = planningMonth();
       const pool = poolBase(month);
-      const ids = KC.store.state.taskTemplates
-        .filter(function (t) { return t.taskGroup === group && t.enabled !== false; })
-        .map(function (t) { return t.id; });
+      // ⛔ 只把**当前周期未完成**的任务加进池：已完成行的「参与规划」是 disabled + 未勾选，
+      //    写进去在界面上看不见，却会在用户「撤回完成」后凭空显示为已规划（BUG-8）。
+      //    判定必须用 `listViews()` 的 `completed`（与勾选框渲染同一口径）。
+      //    取消全选仍按**整组**处理 —— 用户表达的是"这一组都不要"，顺带清掉历史遗留项。
+      const views = listViews(month).items.filter(function (it) {
+        return it.template.taskGroup === group && it.template.enabled !== false;
+      });
+      const groupIds = views.map(function (it) { return it.template.id; });
+      const addableIds = views.filter(function (it) { return !it.completed; })
+        .map(function (it) { return it.template.id; });
       let next;
       if (select) {
-        next = pool.concat(ids.filter(function (id) { return pool.indexOf(id) < 0; }));
+        next = pool.concat(addableIds.filter(function (id) { return pool.indexOf(id) < 0; }));
       } else {
-        next = pool.filter(function (id) { return ids.indexOf(id) < 0; });
+        next = pool.filter(function (id) { return groupIds.indexOf(id) < 0; });
       }
       await KC.store.setPlanningPool(month, next);
       KC.toast(select ? '已全选该组规划' : '已取消该组规划', 'ok');
