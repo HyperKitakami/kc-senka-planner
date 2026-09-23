@@ -1289,10 +1289,23 @@
     }
   }
 
+  /**
+   * 修改规划池时的**起点**（勾选 / 全选 / 取消全选共用）。
+   *
+   * ⛔ 必须与**展示**口径完全一致（`KC.calc.plan.displayPoolIds`）：
+   *   · 当前月且未保存过 → 默认纳入规划池的任务（与列表里看到的勾选一致）
+   *   · 历史月且未保存过 → 空池
+   * 若改用 `store.getEffectivePlanningPool`，历史月会从「默认池」出发 ——
+   * 用户只勾 1 项，9 个默认项会被一起写进该月规划池（展示 0 项却存了 9 项）。
+   */
+  function poolBase(month) {
+    return KC.calc.plan.displayPoolIds(KC.store, month, new Date());
+  }
+
   async function togglePlan(id, checked) {
     try {
       const month = planningMonth();
-      const pool = KC.store.getEffectivePlanningPool(month);
+      const pool = poolBase(month);
       const idx = pool.indexOf(id);
       if (checked && idx < 0) pool.push(id);
       if (!checked && idx >= 0) pool.splice(idx, 1);
@@ -1305,7 +1318,7 @@
   async function groupPlan(group, select) {
     try {
       const month = planningMonth();
-      const pool = KC.store.getEffectivePlanningPool(month);
+      const pool = poolBase(month);
       const ids = KC.store.state.taskTemplates
         .filter(function (t) { return t.taskGroup === group && t.enabled !== false; })
         .map(function (t) { return t.id; });

@@ -175,8 +175,9 @@
    *   · 当前月但没保存过       → 用生效规划池（默认纳入规划池的任务），与首页一致
    *   · 历史月且没保存过       → 空池，不得用默认值凭空捏造"已规划战果"
    *
-   * 注意：战果任务页**修改**规划池时仍应基于 store.getEffectivePlanningPool(month)
-   * （从默认选择出发），本函数只负责展示口径。
+   * ⛔ 战果任务页**修改**规划池时也必须从本函数出发（见该页的 `poolBase()`）：
+   * 展示与写入共用同一口径，否则历史月会从「默认池」出发，勾 1 项就带出整池。
+   * 注意「未保存 → 回落默认池」这条**只对当前月成立**，历史月必须是空池。
    */
   function displayPoolIds(store, monthKey, now) {
     const saved = store.getMonthlyContext(monthKey);
