@@ -959,6 +959,8 @@
   function renderGroup(group, poolSet, month) {
     // EX 组里内置的那批任务单独成卡片（见 EX_CARD_TITLE）；用户自建的 EX 任务
     // 继续按普通分组卡片渲染，两处互不重叠。
+    // ⚠️ 两张卡片同属 `taskGroup === 'EX'`，所以「全选规划」必须带 `scope` 区分，
+    //    否则点哪张都会把另一张的任务一起勾上（跨卡片误勾）。
     if (group.group === 'EX') {
       const sys = group.items.filter(function (it) {
         return !!(it.template && it.template.isSystem);
@@ -968,10 +970,21 @@
       });
       return (sys.length ? renderExCard(sys, poolSet, month) : '') +
         (rest.length ? renderGroupCard({
-          group: 'EX', label: group.label, items: rest
+          group: 'EX', label: group.label, items: rest, scope: 'user'
         }, poolSet, month) : '');
     }
     return renderGroupCard(group, poolSet, month);
+  }
+
+  /**
+   * 「全选规划 / 取消全选」的生效范围（`data-scope`）。
+   * 卡片与分组不是一一对应时才需要 —— 目前只有 EX 组被拆成两张卡片：
+   *   · 内置 EX 卡片 → `system`
+   *   · 用户自建 EX 卡片 → `user`
+   * 其余分组的卡片就是整个分组，不写该属性（= 全组，与改动前一致）。
+   */
+  function scopeAttr(scope) {
+    return scope ? ' data-scope="' + U.escapeHtml(scope) + '"' : '';
   }
 
   /**
@@ -1028,8 +1041,10 @@
         '<div class="panel-tools">' +
           '<span class="panel-count">已完成 ' + done + ' / ' + rows.length +
             ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="1">全选规划</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX" data-select="0">取消全选</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX"' +
+            scopeAttr('system') + ' data-select="1">全选规划</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX"' +
+            scopeAttr('system') + ' data-select="0">取消全选</button>' +
         '</div>' +
       '</div>' +
       '<p class="form-hint">' + U.escapeHtml(EX_CARD_HINT) + '</p>' +
@@ -1062,9 +1077,11 @@
           '<span class="panel-count">已完成 ' + done + ' / ' + group.items.length +
             ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="' +
-            U.escapeHtml(group.group) + '" data-select="1">全选规划</button>' +
+            U.escapeHtml(group.group) + '"' + scopeAttr(group.scope) +
+            ' data-select="1">全选规划</button>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="' +
-            U.escapeHtml(group.group) + '" data-select="0">取消全选</button>' +
+            U.escapeHtml(group.group) + '"' + scopeAttr(group.scope) +
+            ' data-select="0">取消全选</button>' +
         '</div>' +
       '</div>' +
       '<div class="table-wrap"><table class="data-table task-table">' +
@@ -1315,7 +1332,7 @@
     }
   }
 
-  async function groupPlan(group, select) {
+  async function groupPlan(group, select, scope) {
     try {
       const month = planningMonth();
       const pool = poolBase(month);
@@ -1323,8 +1340,13 @@
       //    写进去在界面上看不见，却会在用户「撤回完成」后凭空显示为已规划（BUG-8）。
       //    判定必须用 `listViews()` 的 `completed`（与勾选框渲染同一口径）。
       //    取消全选仍按**整组**处理 —— 用户表达的是"这一组都不要"，顺带清掉历史遗留项。
+      // ⛔ `scope` 限定**本卡片**：EX 组被拆成「内置 EX 卡片」与「用户自建 EX 卡片」两张，
+      //    不带 scope 就会互相误勾（编号 9）。
       const views = listViews(month).items.filter(function (it) {
-        return it.template.taskGroup === group && it.template.enabled !== false;
+        if (it.template.taskGroup !== group || it.template.enabled === false) return false;
+        if (scope === 'system') return !!it.template.isSystem;
+        if (scope === 'user') return !it.template.isSystem;
+        return true;
       });
       const groupIds = views.map(function (it) { return it.template.id; });
       const addableIds = views.filter(function (it) { return !it.completed; })
@@ -1458,7 +1480,7 @@
     } else if (act === 'delete-task') {
       deleteTask(btn.dataset.id);
     } else if (act === 'group-plan') {
-      groupPlan(btn.dataset.group, btn.dataset.select === '1');
+      groupPlan(btn.dataset.group, btn.dataset.select === '1', btn.dataset.scope);
     } else if (act === 'clear-pool') {
       clearPool();
     } else if (act === 'poi-eo-sync') {
