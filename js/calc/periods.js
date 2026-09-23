@@ -215,9 +215,15 @@
     };
   }
 
-  /** 下一次 EO 血条复活时刻（归属月末日 23:00；已过则取下一个月末日） */
+  /**
+   * 下一次 EO 血条复活时刻（自然月末日 23:00；已过则取下一个月末日）。
+   *
+   * ⛔ 基准必须是**自然月**，不能用 currentAttributionMonth()：归属月在末日 21:00
+   * 就翻到次月了，而血条要到 23:00 才复活 —— 拿归属月当基准会让 21:00~23:00 这 2 小时
+   * 显示成「次月末日 23:00」，把 2 小时后就要发生的复活藏起来。
+   */
   function eoReviveAt(now) {
-    const month = P.currentAttributionMonth(now);
+    const month = U.monthKeyOf(U.toDateKey(now));
     const p = String(month).split('-').map(Number);
     const candidate = new Date(p[0], p[1] - 1, U.daysInMonth(month), 23, 0, 0, 0);
     if (candidate.getTime() > now.getTime()) return { at: candidate, month: month };
