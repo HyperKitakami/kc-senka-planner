@@ -17,7 +17,6 @@
   --text-faint: #98a2b3;
 
   /* 主题色 */
-  --brand: #1f4e79;
   --primary: #2f6fed;
   --primary-dark: #2258c9;
   --primary-soft: #eaf1fe;
@@ -97,7 +96,6 @@
   --text-muted: #98a3b3;
   --text-faint: #6d7889;
 
-  --brand: #3f7fd6;
   --primary: #4c86f0;
   --primary-dark: #82adf8;
   --primary-soft: #1d2b42;
@@ -197,17 +195,20 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   border-bottom: 1px solid var(--border);
 }
 
+/* 图标画布四周留有约 7% 的透明外边（主体圆角方块只占 220/256），
+   故盒子取 40px 才能让可见图形约 34px —— 与原来的实心色块视觉等大 */
 .brand-mark {
   flex: 0 0 auto;
-  width: 34px; height: 34px;
+  width: 40px; height: 40px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  background: linear-gradient(150deg, var(--brand), #2f6fed);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: .5px;
+}
+
+/* 图形自带圆角与透明外边，容器不再画底/描边，避免把图形裁掉 */
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
