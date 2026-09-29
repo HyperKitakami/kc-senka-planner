@@ -361,10 +361,10 @@
       '</div>';
   }
 
-  /* ------------------------------------------------ 战果线同期对比卡片 */
+  /* ------------------------------------------------ 战果线往期对比卡片 */
 
   /**
-   * 战果线同期对比（docs/02_ui.md §4.1 / §4.6.2）。
+   * 战果线往期对比（docs/02_ui.md §4.1 / §4.6.2）。
    *
    * 数据来自 wiki「時系列各順位戦果値」页，由用户在本机采集（docs/03_data.md §9.2）。
    * ⚠️ 刻意**不用 poi 的战果线**：poi 的三群是第 501 名、且没有 1 位（人事）线，
@@ -380,7 +380,7 @@
    */
   function senkaLinePanel(model) {
     function head(count) {
-      return '<div class="panel-head"><h2>战果线同期对比</h2>' +
+      return '<div class="panel-head"><h2>战果线往期对比</h2>' +
         '<span class="panel-count">' + U.escapeHtml(count) + '</span></div>';
     }
     function guide(text, label) {
@@ -448,7 +448,7 @@
 
     return '<div class="panel">' +
       '<div class="panel-head">' +
-        '<h2>战果线同期对比</h2>' +
+        '<h2>战果线往期对比</h2>' +
         '<span class="panel-count">' + U.escapeHtml(model.serverName) +
           ' · 对齐 ' + U.escapeHtml(model.current.label) + '</span>' +
       '</div>' +
@@ -793,7 +793,7 @@
     const calendar = KC.calc.stats.monthCalendar(records, month, now);
 
     const settings = currentSettings();
-    // 战果线同期对比：数据在本机轻量存储里，按「当前槽」对齐前几个已结束月
+    // 战果线往期对比：数据在本机轻量存储里，按「当前槽」对齐前几个已结束月
     const senkaLine = KC.senkaLineData.compareModel(settings.server, now);
     const sizes = KC.ui.normalizeCardSizes(settings);
     const info = { sizes: sizes, cols: 0, editing: pageState.editing, span: 0 };
