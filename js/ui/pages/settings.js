@@ -300,6 +300,124 @@
       '</div>';
   }
 
+  /**
+   * 「战果线数据」面板（wiki 采集，docs/02_ui.md §4.9）。
+   *
+   * 数据源是 wikiwiki「情報倉庫/時系列各順位戦果値」。该站有 Cloudflare 访问保护：
+   * 普通 HTTP 请求返回 403，无头浏览器也过不去，服务端代理取回的数字还会被篡改
+   * （docs/03_data.md §9.2）。所以程序**不可能**自己去抓，只能：
+   *   ① 复制一段提取脚本 → ② 用户在 wiki 页面的 Console 里执行 → ③ 把 JSON 粘回来。
+   *
+   * ⚠️ 粘贴的内容不会自动解析，必须点「解析并导入」—— 避免粘到一半就落库。
+   * ⚠️ 与 poi 快照一样，数据存在「本机轻量存储」，**不参与导入导出**，
+   *    所以这里必须给出独立的清除入口。
+   */
+  function senkaLinePanel() {
+    const D = KC.senkaLineData;
+    const settings = KC.store.getSettings();
+    const server = settings.server || '';
+    const list = D.list();
+    const usable = KC.localLayer.available();
+
+    const serverName = KC.schema.serverName(server);
+    // 「前一个已结束月」——wiki 只收录已结束月份，直接指向它最省事
+    const latestMonth = U.addMonths(KC.calc.senkaLine.currentSlot(new Date()).month, -1);
+    const wikiUrl = server
+      ? KC.senkaLineSource.wikiPageUrl(server, latestMonth)
+      : KC.senkaLineSource.WIKI_INDEX_URL;
+
+    const rows = [
+      ['当前服务器', server ? (serverName + '（' + server + '）') : '未设定 —— 请先在上方「游戏服务器」里选择'],
+      ['已采集', list.length
+        ? list.length + ' 个月（' + list.map(function (x) { return x.month; }).join('、') + '）'
+        : '尚未采集']
+    ];
+
+    const detail = list.length
+      ? '<div class="table-wrap"><table class="data-table">' +
+          '<thead><tr><th>服务器</th><th>月份</th><th class="num">采样行</th>' +
+            '<th>导入时间</th><th class="actions">操作</th></tr></thead><tbody>' +
+          list.map(function (x) {
+            return '<tr>' +
+              '<td>' + U.escapeHtml(x.serverName || x.serverCode) + '</td>' +
+              '<td class="cell-date">' + U.escapeHtml(x.month) + '</td>' +
+              '<td class="num">' + x.count + '</td>' +
+              '<td>' + U.escapeHtml(x.importedAt ? fmtDateTime(x.importedAt) : '—') + '</td>' +
+              '<td class="actions">' +
+                '<button type="button" class="btn btn-ghost btn-sm"' +
+                  ' data-act="delete-senka-line"' +
+                  ' data-server="' + U.escapeHtml(x.serverCode) + '"' +
+                  ' data-month="' + U.escapeHtml(x.month) + '">删除</button>' +
+              '</td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody></table></div>'
+      : '';
+
+    const warnText = list.reduce(function (acc, x) {
+      return acc.concat((x.warnings || []).map(function (w) { return x.month + '：' + w; }));
+    }, []);
+    const warnHtml = warnText.length
+      ? '<p class="form-hint">采集时记录的疑点（仅供参考，不影响计算）：<br>' +
+        U.escapeHtml(warnText.join('\n')).replace(/\n/g, '<br>') + '</p>'
+      : '';
+
+    return '<div class="panel">' +
+      '<div class="panel-head"><h2>战果线数据</h2>' +
+        '<span class="panel-count">首页「战果线同期对比」的数据来源</span></div>' +
+
+      '<p class="panel-desc">数据来自 wiki 的 <code>時系列各順位戦果値</code> 页，' +
+        '每页是一个「镇守府 × 月份」，记录 1 / 5 / 20 / 100 / 500 位在当月每天两次采样的战果线。' +
+        '该站有访问保护，程序无法自行获取，需要你在浏览器里跑一次提取脚本再粘回来。</p>' +
+
+      (usable ? '' :
+        '<p class="form-hint">⚠️ 本机轻量存储不可用，导入的数据只存在于本次会话，关闭页面即丢失。</p>') +
+
+      '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
+        rows.map(function (r) {
+          return '<tr><td>' + U.escapeHtml(r[0]) + '</td><td>' + U.escapeHtml(r[1]) + '</td></tr>';
+        }).join('') +
+      '</tbody></table></div>' +
+
+      detail + warnHtml +
+
+      '<div class="senka-step">' +
+        '<div class="senka-step-head">' +
+          '<strong>1 · 在 wiki 页面上执行提取脚本</strong>' +
+          '<a class="senka-link" href="' + U.escapeHtml(wikiUrl) +
+            '" target="_blank" rel="noopener">打开对应页面</a>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="copy-senka-snippet">' +
+            '复制提取脚本</button>' +
+        '</div>' +
+        '<p class="form-hint">打开页面后按 <code>F12</code> 切到 Console，粘贴脚本回车 —— ' +
+          '脚本会<strong>自动把结果复制到剪贴板</strong>，直接粘到下面第 2 步的输入框即可。' +
+          '自动复制失败时，手动选中它返回的内容复制（展开下方可查看脚本原文）。</p>' +
+        '<details class="senka-details"><summary>查看脚本内容</summary>' +
+          '<pre class="senka-snippet">' + U.escapeHtml(KC.senkaLineSource.EXTRACT_SNIPPET) + '</pre>' +
+        '</details>' +
+      '</div>' +
+
+      '<div class="senka-step">' +
+        '<div class="senka-step-head"><strong>2 · 粘贴 JSON 并导入</strong></div>' +
+        '<div class="field">' +
+          '<textarea data-act="senka-line-input" rows="4" spellcheck="false"' +
+            ' placeholder="把提取脚本返回的 JSON 粘贴到这里，然后点下面的「解析并导入」…"></textarea>' +
+        '</div>' +
+        '<div class="panel-foot">' +
+          '<button type="button" class="btn btn-primary btn-sm" data-act="import-senka-line">' +
+            '解析并导入</button>' +
+          (list.length
+            ? '<button type="button" class="btn btn-ghost btn-sm" data-act="clear-senka-line">' +
+                '清除全部 ' + list.length + ' 个月</button>'
+            : '') +
+        '</div>' +
+      '</div>' +
+
+      '<p class="form-hint">数据保存在「本机轻量存储」里，<strong>不参与导入导出</strong>，' +
+        '也不影响任何战果统计；换浏览器或清理站点数据后会一并丢失，需要重新采集。</p>' +
+      '</div>';
+  }
+
   function dataPanel() {
     const st = KC.store.state;
     const settings = KC.store.getSettings();
@@ -360,6 +478,7 @@
       serverPanel() +
       exportRemindPanel() +
       poiPanel() +
+      senkaLinePanel() +
       dataPanel() +
       aboutPanel();
   }
@@ -482,6 +601,114 @@
     }
   }
 
+  /* -------------------------------------------------- 战果线数据（wiki） */
+
+  /** 复制提取脚本。剪贴板不可用（非安全上下文 / 权限被拒）时给可操作的回退提示。 */
+  async function copySenkaSnippet() {
+    let done = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard &&
+          typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(KC.senkaLineSource.EXTRACT_SNIPPET);
+        done = true;
+      }
+    } catch (err) { done = false; }
+    if (done) KC.toast('提取脚本已复制，去 wiki 页面粘到 Console 里执行');
+    else KC.toast('无法自动复制，请展开「查看脚本内容」手动选中复制', 'error');
+  }
+
+  /**
+   * 解析并导入粘进来的 JSON。
+   *
+   * 两处必须让用户看清楚：
+   *   · 归到哪台服务器 —— 以**数据来源**为准（页面标题能识别出来），
+   *     与设置不一致时明确告知会归到哪一边，避免把 A 镇守府的线记到 B 上；
+   *   · 同月已有数据时会被覆盖。
+   * 采集时的可疑点（行数不符 / 数值非单调）只提示、不阻断 —— 剔除与否由用户判断。
+   */
+  async function importSenkaLine() {
+    const ta = KC.dom.qs('[data-act="senka-line-input"]', pageState.container);
+    const raw = ta ? String(ta.value || '') : '';
+    if (!raw.trim()) { KC.toast('请先把提取到的 JSON 粘贴进来', 'error'); return; }
+
+    const res = KC.senkaLineSource.parse(raw);
+    if (!res.ok) { KC.toast(res.error, 'error'); return; }
+    const d = res.data;
+
+    const fromSetting = KC.store.getSettings().server || '';
+    const code = d.serverCode || fromSetting;
+    if (!code) {
+      KC.toast('识别不出服务器，请先在上方「游戏服务器」里选择后再导入', 'error');
+      return;
+    }
+    const name = d.serverName || KC.schema.serverName(code) || code;
+
+    if (d.serverCode && fromSetting && d.serverCode !== fromSetting) {
+      const go = await KC.confirmDialog({
+        title: '服务器与设置不一致',
+        message: '这份数据来自「' + name + '」，但设置里选的是「' +
+          KC.schema.serverName(fromSetting) + '」。\n\n' +
+          '导入后会归到「' + name + '」名下，不会改动你的服务器设置。',
+        okText: '按数据来源导入'
+      });
+      if (!go) return;
+    }
+
+    const exist = KC.senkaLineData.read(code, d.month);
+    const ok = await KC.confirmDialog({
+      title: '导入战果线数据',
+      message: '服务器：' + name + '\n月份：' + d.month + '\n采样行：' + d.rows.length + ' 行' +
+        (d.warnings.length
+          ? '\n\n⚠️ 有 ' + d.warnings.length + ' 处可疑（仍可导入）：\n  · ' +
+            d.warnings.join('\n  · ')
+          : '') +
+        (exist ? '\n\n该月已有数据（导入于 ' + fmtDateTime(exist.importedAt) + '），将被覆盖。' : ''),
+      okText: '导入'
+    });
+    if (!ok) return;
+
+    const saved = KC.senkaLineData.save(code, d.month, d, { source: d.source });
+    if (!saved.ok) { KC.toast('导入失败：' + saved.error, 'error'); return; }
+    if (ta) ta.value = '';
+    KC.toast(saved.persisted
+      ? '已导入 ' + d.month + ' 的战果线数据（' + d.rows.length + ' 行）'
+      : '已导入，但本机轻量存储不可用，关闭页面后会丢失');
+    render();
+  }
+
+  async function deleteSenkaLine(serverCode, month) {
+    const ok = await KC.confirmDialog({
+      title: '删除战果线数据',
+      message: '将删除 ' + month + ' 的战果线数据。\n\n' +
+        '影响：首页「战果线同期对比」会少一个月可对比。\n' +
+        '其它数据不受影响；删除后重新采集即可恢复。',
+      okText: '删除',
+      danger: true
+    });
+    if (!ok) return;
+    KC.senkaLineData.remove(serverCode, month);
+    KC.toast('已删除 ' + month + ' 的战果线数据');
+    render();
+  }
+
+  async function clearSenkaLine() {
+    const list = KC.senkaLineData.list();
+    if (!list.length) return;
+    const ok = await KC.confirmDialog({
+      title: '清除全部战果线数据',
+      message: '将删除本机保存的 ' + list.length + ' 个月战果线数据（' +
+        list.map(function (x) { return x.month; }).join('、') + '）。\n\n' +
+        '影响：首页「战果线同期对比」将没有数据可展示。\n' +
+        '每日记录、任务、归档等业务数据**不受影响**；删除后需要重新采集。',
+      okText: '清除全部',
+      danger: true
+    });
+    if (!ok) return;
+    const n = KC.senkaLineData.clearAll().length;
+    KC.toast('已清除 ' + n + ' 个月战果线数据');
+    render();
+  }
+
   function handleClick(e) {
     const btn = KC.dom.closestFrom(e.target, '[data-act]');
     if (!btn) return;
@@ -492,6 +719,10 @@
     else if (act === 'set-export-remind') setExportRemindMode(btn.dataset.mode);
     else if (act === 'reset-export-remind') resetExportRemind();
     else if (act === 'clear-poi-snapshot') clearPoiSnapshot();
+    else if (act === 'copy-senka-snippet') copySenkaSnippet();
+    else if (act === 'import-senka-line') importSenkaLine();
+    else if (act === 'delete-senka-line') deleteSenkaLine(btn.dataset.server, btn.dataset.month);
+    else if (act === 'clear-senka-line') clearSenkaLine();
     else if (act === 'move-card') moveCard(btn.dataset.id, btn.dataset.dir);
     else if (act === 'set-card-size') setCardSize(btn.dataset.id, btn.dataset.size);
     else if (act === 'reset-card-layout') resetCardLayout();

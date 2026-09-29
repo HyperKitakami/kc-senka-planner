@@ -1333,6 +1333,111 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .mini-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------------------
+   首页「战果线同期对比」卡片
+   每格是「同槽值 → 月末值 +涨幅」。刻意**不**沿用 --rank-* 那套配色：
+   那是 poi 四条排名线的专用色，与本站的 1/5/20/100/500 位不是同一口径，
+   同色会暗示两者可以混看。这里纯靠字重与灰度分层。
+   -------------------------------------------------------------------------- */
+
+.data-table.is-rankline { font-size: 13px; }
+.data-table.is-rankline th,
+.data-table.is-rankline td { padding: 7px 10px; white-space: nowrap; }
+
+/* 行首的位次名是 tbody 里的 th —— 会被表头样式带成灰底，
+   它会跟着 tbody tr:hover 一起变色，所以要显式压掉背景 */
+.data-table.is-rankline tbody th {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+/* 月份表头下的「对齐进度点」（如 29 日 前半日） */
+.data-table.is-rankline .rl-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.data-table.is-rankline .rl-same { color: var(--text-muted); font-weight: 600; }
+.data-table.is-rankline .rl-arrow { margin: 0 3px; color: var(--text-faint); }
+.data-table.is-rankline .rl-end { color: var(--text); font-weight: 600; }
+
+/* 涨幅 = 从现在到月末还会涨多少，是「参考量」而非好坏事，保持中性色 */
+.data-table.is-rankline .rl-delta {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--tag-bg);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+/* 「末」角标：该月较短、没有这个进度点，格子里取的是月末值 */
+.data-table.is-rankline .rl-flag {
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.rl-legend { font-size: 12px; color: var(--text-faint); }
+
+/* --------------------------------------------------------------------------
+   设置页「战果线数据」面板
+   两步流程：① 在 wiki 页面执行提取脚本 → ② 把 JSON 粘回来导入
+   -------------------------------------------------------------------------- */
+
+.senka-step {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.senka-step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.senka-step-head strong { font-size: 13px; }
+/* 链接与按钮靠右：左侧只留步骤标题 */
+.senka-step-head .senka-link { margin-left: auto; }
+
+.senka-link { font-size: 12.5px; color: var(--primary); text-decoration: none; }
+.senka-link:hover { text-decoration: underline; }
+
+.senka-details { margin: 8px 0 0; }
+
+.senka-details summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* 提取脚本原文：内容较长，限高可滚，等宽显示 */
+.senka-snippet {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* --------------------------------------------------------------------------
    poi 数据同步面板（战果记录页）
    「手动选文件 → 显示建议值 → 一键填充空白项」两步流程的界面
    -------------------------------------------------------------------------- */

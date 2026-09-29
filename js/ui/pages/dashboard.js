@@ -361,11 +361,102 @@
       '</div>';
   }
 
+  /* ------------------------------------------------ 战果线同期对比卡片 */
+
+  /**
+   * 战果线同期对比（docs/02_ui.md §4.1 / §4.6.2）。
+   *
+   * 数据来自 wiki「時系列各順位戦果値」页，由用户在本机采集（docs/03_data.md §9.2）。
+   * ⚠️ 刻意**不用 poi 的战果线**：poi 的三群是第 501 名、且没有 1 位（人事）线，
+   *    与本站的 500 位口径混在同一条对比线上不干净。poi 只负责「当月实时值」
+   *    这类 wiki 给不了的数据。
+   *
+   * 每格展示「同槽值 → 月末值 +涨幅」：
+   *   · 同槽值 = 往月「与现在同一进度点」到哪了，用来判断今年这个月是松是紧；
+   *   · 月末值 = 那个月最终到哪了；
+   *   · 两者之差就是**从现在到月末还会涨多少**的参照。
+   *
+   * 无数据时给引导、绝不给空表（与「战果线对比」卡片同一约定）。
+   */
+  function senkaLinePanel(model) {
+    function head(count) {
+      return '<div class="panel-head"><h2>战果线同期对比</h2>' +
+        '<span class="panel-count">' + U.escapeHtml(count) + '</span></div>';
+    }
+    function guide(text, label) {
+      return '<div class="panel">' + head('需要先准备数据') +
+        '<div class="empty-inline">' + U.escapeHtml(text) +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-settings">' +
+        U.escapeHtml(label) + '</button></div></div>';
+    }
+
+    if (!model.hasServer) {
+      return guide('还没有设定游戏服务器。设定后才能比对对应镇守府的战果线。', '去设置');
+    }
+    if (!model.months.length) {
+      return guide('还没有采集过「' + model.serverName + '」的战果线数据。' +
+        '到设置页「战果线数据」复制提取脚本，在 wiki 页面上跑一次再粘回来。', '去采集');
+    }
+
+    const cols = model.months.map(function (m) {
+      return '<th class="num">' + U.escapeHtml(m.month) +
+        '<span class="rl-sub">' + U.escapeHtml(m.sameLabel || '—') + '</span></th>';
+    }).join('');
+
+    const body = KC.senkaLineSource.RANKS.map(function (rank) {
+      const cells = model.months.map(function (m) {
+        const sv = m.same ? m.same.row[rank.key] : null;
+        const ev = m.end ? m.end.row[rank.key] : null;
+        if (sv === null && ev === null) return '<td class="num">—</td>';
+
+        const delta = (sv !== null && ev !== null) ? ev - sv : 0;
+        // same.exact=false 说明该月没有这个进度点（月份较短），取到的是月末值
+        const fell = !!(m.same && !m.same.exact);
+        return '<td class="num">' +
+          '<span class="rl-same">' + U.formatInt(sv) + '</span>' +
+          '<span class="rl-arrow" aria-hidden="true">→</span>' +
+          '<span class="rl-end">' + U.formatInt(ev) + '</span>' +
+          (delta > 0 ? '<span class="rl-delta">+' + U.formatInt(delta) + '</span>' : '') +
+          (fell ? '<span class="rl-flag" title="该月没有这个进度点（月份较短），取的是月末值">末</span>' : '') +
+          '</td>';
+      }).join('');
+      return '<tr><th scope="row" title="' + U.escapeHtml(rank.label + ' ／ ' + rank.tier) + '">' +
+        U.escapeHtml(rank.short) + '</th>' + cells + '</tr>';
+    }).join('');
+
+    const notes = [];
+    if (model.gaps.length) {
+      notes.push('已跳过 ' + model.gaps.join('、') + '（本地没有这些月份的数据）');
+    }
+    if (model.partial) {
+      notes.push('不足 3 个月，先列出已采集的');
+    }
+
+    return '<div class="panel">' +
+      '<div class="panel-head">' +
+        '<h2>战果线同期对比</h2>' +
+        '<span class="panel-count">' + U.escapeHtml(model.serverName) +
+          ' · 对齐 ' + U.escapeHtml(model.current.label) + '</span>' +
+      '</div>' +
+      '<div class="table-wrap"><table class="data-table is-rankline">' +
+        '<thead><tr><th>位次</th>' + cols + '</tr></thead>' +
+        '<tbody>' + body + '</tbody>' +
+      '</table></div>' +
+      (notes.length ? '<div class="panel-desc">' + U.escapeHtml(notes.join('；')) + '。</div>' : '') +
+      '<div class="panel-foot">' +
+        '<span class="rl-legend">每格：同槽值 → 该月月末值 +涨幅</span>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-settings">' +
+          '采集 / 管理数据</button>' +
+      '</div>' +
+      '</div>';
+  }
+
   /** 面板型卡片渲染器：id -> 渲染函数 */
-  function buildPanelRenderers(cal, recent14, recent7) {
+  function buildPanelRenderers(cal, recent14, recent7, senkaLine) {
     return {
       calendar: function () { return calendarPanel(cal); },
       trend: function () { return trendPanel(recent14); },
+      senkaLineCompare: function () { return senkaLinePanel(senkaLine); },
       recentSummary: function () { return summaryPanel(recent7); }
     };
   }
@@ -377,9 +468,9 @@
    * 因此用户可以把面板卡拖到任意位置、也能让统计卡和面板卡并排换行。
    * 实际列跨度由 applyCardLayout 在插入 DOM 后写入，渲染阶段只负责内容与数据属性。
    */
-  function cardsBlock(plan, ctx, cal, recent14, recent7, info) {
+  function cardsBlock(plan, ctx, cal, recent14, recent7, info, senkaLine) {
     const grid = gridCards(plan, ctx);
-    const panels = buildPanelRenderers(cal, recent14, recent7);
+    const panels = buildPanelRenderers(cal, recent14, recent7, senkaLine);
     const settings = currentSettings();
 
     const items = KC.ui.visibleDashboardCards(settings).map(function (id) {
@@ -688,6 +779,8 @@
     const calendar = KC.calc.stats.monthCalendar(records, month, now);
 
     const settings = currentSettings();
+    // 战果线同期对比：数据在本机轻量存储里，按「当前槽」对齐前几个已结束月
+    const senkaLine = KC.senkaLineData.compareModel(settings.server, now);
     const sizes = KC.ui.normalizeCardSizes(settings);
     const info = { sizes: sizes, cols: 0, editing: pageState.editing, span: 0 };
 
@@ -726,7 +819,7 @@
         KC.ui.senkaProgress(plan) +
       '</div>' +
 
-      cardsBlock(plan, ctx, calendar, recent14, recent7, info);
+      cardsBlock(plan, ctx, calendar, recent14, recent7, info, senkaLine);
 
     applyCardLayout(sizes);
     // 工具条文案含列数，且卡片列数就绪后才知道要提示几列，所以放在最后刷新
@@ -782,6 +875,7 @@
     if (act === 'goto-records') KC.router.navigate('records');
     else if (act === 'goto-planning') KC.router.navigate('planning');
     else if (act === 'goto-tasks') KC.router.navigate('tasks');
+    else if (act === 'goto-settings') KC.router.navigate('settings');
   }
 
   /* -------------------------------------------------------------- 生命周期 */

@@ -44,28 +44,32 @@
    * 游戏服务器（共 20 个）。
    * 编号即「人事表」图片文件名末尾的 2 位数字。
    * 来源：舰娘百科「服务器」条目。
+   *
+   * `wikiName` 是 wikiwiki「時系列各順位戦果値」页面里用的**日文原名**，
+   * 仅用于从该站页面的标题/路径识别服务器（见 core/senkaLineSource.js）。
+   * 它是可选字段：缺失时解析层会降级为「未识别」，由用户手动选服务器。
    */
   const SERVERS = [
-    { code: '01', name: '横须贺镇守府' },
-    { code: '02', name: '吴镇守府' },
-    { code: '03', name: '佐世保镇守府' },
-    { code: '04', name: '舞鹤镇守府' },
-    { code: '05', name: '大凑警备府' },
-    { code: '06', name: '特鲁克泊地' },
-    { code: '07', name: '林加泊地' },
-    { code: '08', name: '拉包尔基地' },
-    { code: '09', name: '肖特兰泊地' },
-    { code: '10', name: '布因基地' },
-    { code: '11', name: '塔威塔威泊地' },
-    { code: '12', name: '帕劳泊地' },
-    { code: '13', name: '文莱泊地' },
-    { code: '14', name: '单冠湾泊地' },
-    { code: '15', name: '幌筵泊地' },
-    { code: '16', name: '宿毛湾泊地' },
-    { code: '17', name: '鹿屋基地' },
-    { code: '18', name: '岩川基地' },
-    { code: '19', name: '佐伯湾泊地' },
-    { code: '20', name: '柱岛泊地' }
+    { code: '01', name: '横须贺镇守府', wikiName: '横須賀鎮守府' },
+    { code: '02', name: '吴镇守府', wikiName: '呉鎮守府' },
+    { code: '03', name: '佐世保镇守府', wikiName: '佐世保鎮守府' },
+    { code: '04', name: '舞鹤镇守府', wikiName: '舞鶴鎮守府' },
+    { code: '05', name: '大凑警备府', wikiName: '大湊警備府' },
+    { code: '06', name: '特鲁克泊地', wikiName: 'トラック泊地' },
+    { code: '07', name: '林加泊地', wikiName: 'リンガ泊地' },
+    { code: '08', name: '拉包尔基地', wikiName: 'ラバウル基地' },
+    { code: '09', name: '肖特兰泊地', wikiName: 'ショートランド泊地' },
+    { code: '10', name: '布因基地', wikiName: 'ブイン基地' },
+    { code: '11', name: '塔威塔威泊地', wikiName: 'タウイタウイ泊地' },
+    { code: '12', name: '帕劳泊地', wikiName: 'パラオ泊地' },
+    { code: '13', name: '文莱泊地', wikiName: 'ブルネイ泊地' },
+    { code: '14', name: '单冠湾泊地', wikiName: '単冠湾泊地' },
+    { code: '15', name: '幌筵泊地', wikiName: '幌筵泊地' },
+    { code: '16', name: '宿毛湾泊地', wikiName: '宿毛湾泊地' },
+    { code: '17', name: '鹿屋基地', wikiName: '鹿屋基地' },
+    { code: '18', name: '岩川基地', wikiName: '岩川基地' },
+    { code: '19', name: '佐伯湾泊地', wikiName: '佐伯湾泊地' },
+    { code: '20', name: '柱岛泊地', wikiName: '柱島泊地' }
   ];
 
   /** 人事表图片地址前缀（由游戏官方服务器提供，非本工具资源） */
@@ -125,7 +129,7 @@
     dashboardOrder: [
       'currentSenka', 'target', 'remainingTarget', 'monthEndForecast',
       'todayGrowth', 'naturalDaily', 'requiredDaily', 'remainingPeriod',
-      'calendar', 'trend', 'recentSummary'
+      'calendar', 'trend', 'senkaLineCompare', 'recentSummary'
     ],
     dashboardHidden: [],
     /**

@@ -111,12 +111,15 @@ js/core/   utils            通用工具
            localLayer       本机轻量存储（localStorage，置于持久数据模型之外）
            poiSource        poi 数据文件解析（纯函数）
            poiData          poi 数据接入 IO 外壳（选文件 / 落快照 / 取数 / 差异）
+           senkaLineSource  wiki 战果线数据解析（纯函数，含浏览器提取脚本片段）
+           senkaLineData    wiki 战果线数据接入 IO 外壳（导入 / 落快照 / 取数 / 卡片组装）
 js/data/   defaultTasks     内置 EO / EX 任务模板
 js/calc/   stats            月度统计
            tasks            任务周期与战果汇总
            plan             规划：实际 / 规划战果、所需日均、预测
            analysis         逐日序列、月度比较、战果构成
            periods          周期查询：任务刷新 / 战果结算两套边界的剩余时间
+           senkaLine        战果线槽位推导与取值（当前槽 / 同槽取值 / 月末值）
 js/ui/     dom / feedback    DOM 辅助、Toast 与确认弹窗
            export           导出与下载
            nav / router      导航与 hash 路由

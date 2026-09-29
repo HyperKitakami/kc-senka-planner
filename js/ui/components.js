@@ -142,6 +142,7 @@
     { id: 'remainingPeriod',  label: '周期剩余',     kind: 'stat' },
     { id: 'calendar',         label: '战果日历',     kind: 'panel' },
     { id: 'trend',            label: '最近增长趋势', kind: 'panel' },
+    { id: 'senkaLineCompare', label: '战果线同期对比', kind: 'panel' },
     { id: 'recentSummary',    label: '最近数据摘要', kind: 'panel' }
   ];
 
