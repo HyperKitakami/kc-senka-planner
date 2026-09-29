@@ -326,12 +326,41 @@
       ? KC.senkaLineSource.wikiPageUrl(server, latestMonth)
       : KC.senkaLineSource.WIKI_INDEX_URL;
 
+    // ⚠️ 这里必须**按服务器分开统计**。
+    //    早先只报「已采集 N 个月」是把全部服务器混在一起的，于是"6/7/8 月都在"
+    //    看起来没问题，实际可能分属不同镇守府 —— 而首页卡片只比对当前服务器，
+    //    结果就是卡片只显示一个月，用户完全摸不着头脑。别再合并统计。
+    const own = server ? D.monthsOf(server) : [];
+    const foreignRows = list.filter(function (x) { return x.serverCode !== server; });
+
     const rows = [
       ['当前服务器', server ? (serverName + '（' + server + '）') : '未设定 —— 请先在上方「游戏服务器」里选择'],
-      ['已采集', list.length
-        ? list.length + ' 个月（' + list.map(function (x) { return x.month; }).join('、') + '）'
+      ['本服务器已采集', own.length
+        ? own.length + ' 个月（' + own.join('、') + '）'
         : '尚未采集']
     ];
+
+    if (foreignRows.length) {
+      const grouped = {};
+      foreignRows.forEach(function (x) {
+        if (!grouped[x.serverCode]) {
+          grouped[x.serverCode] = { name: x.serverName || x.serverCode, months: [] };
+        }
+        grouped[x.serverCode].months.push(x.month);
+      });
+      rows.push(['其它服务器的数据', Object.keys(grouped).map(function (k) {
+        return grouped[k].name + ' ' + grouped[k].months.length + ' 个月（' +
+          grouped[k].months.join('、') + '）';
+      }).join('；')]);
+    }
+
+    // 本服务器一条都没有、别的服务器却有 —— 极可能服务器选错了，必须显式提醒
+    const serverWarn = (!own.length && foreignRows.length)
+      ? '<p class="form-hint">⚠️ 本机已有 ' + foreignRows.length +
+        ' 个月的数据，但<strong>没有一个月属于当前服务器</strong>。' +
+        '首页「战果线同期对比」只比对当前服务器，因此不会显示它们 —— ' +
+        '请确认「游戏服务器」选的是不是你实际所在的镇守府。</p>'
+      : '';
 
     const detail = list.length
       ? '<div class="table-wrap"><table class="data-table">' +
@@ -339,7 +368,10 @@
             '<th>导入时间</th><th class="actions">操作</th></tr></thead><tbody>' +
           list.map(function (x) {
             return '<tr>' +
-              '<td>' + U.escapeHtml(x.serverName || x.serverCode) + '</td>' +
+              '<td>' + U.escapeHtml(x.serverName || x.serverCode) +
+                (x.serverCode === server ? '' :
+                  '<span class="chip-flag" title="不属于当前设定的服务器，首页卡片不会使用它">非当前</span>') +
+              '</td>' +
               '<td class="cell-date">' + U.escapeHtml(x.month) + '</td>' +
               '<td class="num">' + x.count + '</td>' +
               '<td>' + U.escapeHtml(x.importedAt ? fmtDateTime(x.importedAt) : '—') + '</td>' +
@@ -378,6 +410,8 @@
           return '<tr><td>' + U.escapeHtml(r[0]) + '</td><td>' + U.escapeHtml(r[1]) + '</td></tr>';
         }).join('') +
       '</tbody></table></div>' +
+
+      serverWarn +
 
       detail + warnHtml +
 

@@ -191,6 +191,29 @@
       };
     });
 
+    /**
+     * 诊断：被跳过的月份里，哪些**其实本地已经有、只是记在别的服务器名下**。
+     *
+     * 这是最容易让人误判成"没数据"的一种情形 —— 因为设置页的「已采集」汇总是
+     * 跨全部服务器的，而卡片只认当前服务器（docs/02_ui.md §4.1.1）。
+     * 把这个信息交给 UI，卡片才能给出「请检查服务器设置」这类可操作的提示，
+     * 而不是干巴巴一句"本地没有这些月份的数据"。
+     */
+    const allCodes = serverCodes();
+    const foreign = [];
+    pick.gaps.forEach(function (month) {
+      const owners = allCodes.filter(function (code) {
+        return code !== String(serverCode) && monthsOf(code).indexOf(month) >= 0;
+      });
+      if (!owners.length) return;
+      foreign.push({
+        month: month,
+        owners: owners.map(function (code) {
+          return { code: code, name: KC.schema.serverName(code) || code };
+        })
+      });
+    });
+
     return {
       serverCode: String(serverCode || ''),
       serverName: KC.schema.serverName(serverCode) || '',
@@ -204,9 +227,15 @@
       },
       months: items,
       gaps: pick.gaps,
+      /** 属于其它服务器的被跳过月份，见上方注释 */
+      foreign: foreign,
       partial: pick.partial,
-      /** 本地一共采集了多少个月（含未纳入对比的） */
-      savedCount: saved.length
+      /** 本服务器已采集的月份（升序） */
+      savedMonths: saved,
+      /** 本服务器已采集的月数 */
+      savedCount: saved.length,
+      /** 本机全部服务器加起来采集了多少个月 */
+      savedCountAll: allCodes.reduce(function (n, code) { return n + monthsOf(code).length; }, 0)
     };
   }
 

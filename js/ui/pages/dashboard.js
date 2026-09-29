@@ -394,6 +394,13 @@
       return guide('还没有设定游戏服务器。设定后才能比对对应镇守府的战果线。', '去设置');
     }
     if (!model.months.length) {
+      // 本机有数据、但没有一个月属于当前服务器 —— 多半是服务器选错了，
+      // 直接点破，别让用户以为是"没采集过"而白跑一遍采集流程。
+      if (model.savedCountAll > 0) {
+        return guide('本机已采集了 ' + model.savedCountAll + ' 个月的数据，' +
+          '但没有一个月属于「' + model.serverName + '」。' +
+          '请到设置页确认「游戏服务器」选的是不是你实际所在的镇守府。', '去检查');
+      }
       return guide('还没有采集过「' + model.serverName + '」的战果线数据。' +
         '到设置页「战果线数据」复制提取脚本，在 wiki 页面上跑一次再粘回来。', '去采集');
     }
@@ -417,7 +424,7 @@
           '<span class="rl-arrow" aria-hidden="true">→</span>' +
           '<span class="rl-end">' + U.formatInt(ev) + '</span>' +
           (delta > 0 ? '<span class="rl-delta">+' + U.formatInt(delta) + '</span>' : '') +
-          (fell ? '<span class="rl-flag" title="该月没有这个进度点（月份较短），取的是月末值">末</span>' : '') +
+          (fell ? '<span class="chip-flag" title="该月没有这个进度点（月份较短），取的是月末值">末</span>' : '') +
           '</td>';
       }).join('');
       return '<tr><th scope="row" title="' + U.escapeHtml(rank.label + ' ／ ' + rank.tier) + '">' +
@@ -425,8 +432,15 @@
     }).join('');
 
     const notes = [];
-    if (model.gaps.length) {
-      notes.push('已跳过 ' + model.gaps.join('、') + '（本地没有这些月份的数据）');
+    if (model.foreign.length) {
+      // 数据其实在，只是记在别的服务器名下 —— 这是最容易被误判成"没数据"的情形，必须点破
+      notes.push('已跳过 ' + model.gaps.join('、') + '：本服务器没有这些月份，但本机已采集到 ' +
+        model.foreign.map(function (f) {
+          return f.month + '（属于「' +
+            f.owners.map(function (o) { return o.name; }).join('、') + '」）';
+        }).join('、') + '。请检查设置里的服务器是否正确，或按该服务器重新采集');
+    } else if (model.gaps.length) {
+      notes.push('已跳过 ' + model.gaps.join('、') + '（本服务器还没有这些月的数据）');
     }
     if (model.partial) {
       notes.push('不足 3 个月，先列出已采集的');
