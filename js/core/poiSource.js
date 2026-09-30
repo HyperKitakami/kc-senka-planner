@@ -6,8 +6,10 @@
      输出 = 结构化的解析结果
    文件读取（File System Access API）、快照落盘由上层负责。
 
-   数据来源：poi ＋ poi-plugin-achievement
-     · Windows 默认路径  %APPDATA%/poi/achieve/achieve.json
+   数据来源：poi ＋ 战果插件
+     · Windows 默认路径  %APPDATA%/poi/plugin-data/poi-plugin-senka-tracker/senka-tracker.json
+       （上游原版 poi-plugin-achievement 落在 %APPDATA%/poi/achieve/achieve.json；
+        **两者字段结构一致**，格式识别只看内容不看文件名，任一份都能解析）
      · 格式：**扁平**，约 52 个顶层键，所有数据都在顶层（**没有 r5his 嵌套**）
 
    ── 字段模型（实测核对，勿凭命名臆测）────────────────────────────
@@ -29,9 +31,15 @@
 
      rankuex   string[]        **未完成**的 EO 海域列表（来自 selectors.es）
      ignoreex  {code:bool}     用户手动忽略的海域，不参与统计
-     extraSenkalist number[]   三态**人工标记**（poi 界面上点一下就循环）：0=计划攻略 /
-                               1=计划不攻略（默认）/ 2=已完成。
-                               ⚠️ 它是 poi 的**计划**标记，本模块不使用
+     extraSenkalist number[]   七个战果任务（Bq2/Bq7/Bq8/Bq10/Bq11/Bq12/Bq13，**与 zName 同序**）
+                               的三态标记：0=计划攻略 / 1=计划不攻略（默认）/ 2=已完成。
+                               ⚠️ **`2` 是权威的「已完成」**，不是纯人工标记 —— 插件收到
+                               任务列表（`api_get_member/questlist`）时会按 `api_request_no`
+                               （Bq8 这类编号）匹配、`api_state >= 2` 即写 2（见插件
+                               lib/quest.es 的 `scanQuestList` / `diffQuestProgress`），
+                               因此「领奖那一刻 poi 没开 / 奖励早就领过」也能补标记；
+                               玩家在界面上点按钮循环到 2 用的是同一个字段。
+                               ⚠️ `0`（计划攻略）/ `1`（计划不攻略）**都不算完成**，只有 2 算
      extraSenka 相关：zcleartslist / zId / zValue / zName
                                额外战果（EO 之外的季常任务）的清单，同序四表
      zcleartslist[i]           第 i 项的**完成时刻**（poi 收到 clearitemget 时写入
@@ -68,7 +76,11 @@
     '4-5': 180, '5-5': 200, '5-6': 225, '6-5': 250
   };
 
-  /** extraSenkalist 三态（人工标记，**不是**完成状态）：0=计划攻略 / 1=计划不攻略 / 2=已完成 */
+  /**
+   * `extraSenkalist` 三态（战果任务的标记，**不是** EO 的完成状态）：
+   * 0=计划攻略 / 1=计划不攻略 / 2=已完成。
+   * 只有 `DONE` 代表「已完成」，另外两态都只是计划。
+   */
   const QUEST_STATE = { PLAN: 0, SKIP: 1, DONE: 2 };
 
   /* ------------------------------------------------------------- 工具函数 */
@@ -351,8 +363,8 @@
    * 故「已完成 = EO_SENKA 全集 − rankuex」。`ignoreex[code] === true` 表示
    * 用户手动忽略该海域，不参与统计。
    *
-   * ⚠️ 不使用 `extraSenkalist` —— 实测它是三态人工标记（0=已完成/1=未完成/2=进行中），
-   * 与血条完成无关，本机全为 1。曾把「非 0 = 已完成」当结论，是错的。
+   * ⚠️ 本函数**不使用** `extraSenkalist` —— 那是**战果任务**（Bq*）的三态标记，
+   * 与 EO 海域的血条无关（EO 的完成状态只看 `rankuex`）。曾把两者混为一谈，是错的。
    *
    * @param {object} raw
    * @param {Array} [templates] 可选 KC.defaultTasks.EO_TASKS，用于对齐战果值/名称
@@ -567,24 +579,36 @@
   }
 
   /**
-   * poi 侧的「额外战果 / 季常任务」完成状态。
+   * 战果任务（Bq2/Bq7/Bq8/Bq10/Bq11/Bq12/Bq13）的完成状态。
    *
-   * ⛔ **判定方向（曾写反过，勿回退）**：`zcleartslist[i]` 是第 i 项的**完成时刻**
-   * （poi 收到 `api_req_quest/clearitemget` 时写入 `new Date()`），
-   * **非 0 / 非空即已完成；`0` = 未完成**。
-   * 早期实现把它当成"已完成清单"（`=== 0` 即完成）—— 方向完全反了，
-   * 于是**全部季常任务**都被判成已完成，同步面板会一次性勾错 7 项。
+   * ── 两个**独立**来源，任一成立即「已完成」────────────────────────
+   *   ① `zcleartslist[i]` —— 第 i 项的**完成时刻**（poi 收到
+   *      `/kcsapi/api_req_quest/clearitemget` 时写入 `new Date()`），**0 = 未完成**。
+   *   ② `extraSenkalist[i] === 2` —— 三态标记里的「已完成」。它是插件**主动对账**
+   *      游戏任务列表写下的：拿到 `api_get_member/questlist` 就按 `api_request_no`
+   *      （Bq8 这类编号）匹配、`api_state >= 2`（已完成待领赏 / 已领赏）即写 2。
+   *      所以「领奖那一刻 poi 没开着」或「奖励早就领过了」这两种 ① 永远看不到的情况，
+   *      只能靠 ② 补上；玩家手动点按钮循环到 2 用的也是同一个字段。
    *
-   * ⚠️ **口径范围**：poi 在**每个战果月**把 `zcleartslist` 重置为全 0
-   * （它自己只用这个字段算当月战果增量），所以这里能回答的只是
-   * 「**当前战果月内**是否完成过」，**不覆盖本季更早的月份**。
-   * 因此本函数只作正向提示来源，UI 必须把这个范围讲清楚。
+   * ⛔ **判定方向（曾写反过，勿回退）**：① 是「**非 0 即已完成**」，不是「`= 0` 即已完成」。
+   *    早期实现把它当成"已完成清单"（`=== 0` 即完成）—— 方向完全反了，
+   *    于是**全部任务**都被判成已完成，同步面板会一次性勾错 7 项。
    *
-   * ⚠️ **不使用 `extraSenkalist`**：它是 poi 界面上的三态**计划**标记
-   * （0=计划攻略 / 1=计划不攻略 / 2=已完成），同样是人工可点、每月重置的，
-   * 拿它判完成会把"计划攻略"误当"已完成"。此处只把它原样透出供 UI 参考。
+   * ⛔ **不要退回「只看 ①」**：本机实测 `zcleartslist` 是**全 0**，而
+   *    `extraSenkalist = [1,1,2,1,1,1,1]`（第 3 项 Bq8 泊地警戒已完成）——
+   *    只看 ① 会把 Bq8 漏判成未完成（而它确实是已完成的）。
+   *    ⚠️ 但三态里的 `0`（计划攻略）/ `1`（计划不攻略）**都不算完成**，只有 `2` 算。
+   *
+   * ⚠️ **口径范围**：插件在**每个战果月**把 `zcleartslist` 与 `extraSenkalist` 一起
+   *    重置（它只用这两个字段算当月战果增量），所以这里能回答的只是
+   *    「**当前战果月内**是否完成过」，**不覆盖本季更早的月份**。
+   *    因此本函数只作正向提示来源，UI 必须把这个范围讲清楚。
    *
    * zName / zValue / zId 与 zcleartslist 同序。
+   *
+   * @returns {{list:Array, doneSenka:number, totalSenka:number}}
+   *   每项含 `done`（综合结论）与 `doneBy`：'clearedAt'（有完成时刻）/
+   *   'mark'（只有三态标记）/ ''（未完成），供 UI 区分文案。
    */
   function extraQuestStatus(raw) {
     const root = isObj(raw) ? raw : {};
@@ -596,18 +620,26 @@
 
     const list = [];
     for (let i = 0; i < names.length; i++) {
-      const mark = num(marks[i], QUEST_STATE.SKIP);
+      // 缺值 / null / 空串 ⇒ 按插件的**重置值**处理（计划不攻略），
+      // 不能因为"读不到标记"就当成 0（计划攻略）或误判成已完成。
+      const rawMark = marks[i];
+      const mark = (rawMark === null || rawMark === undefined || rawMark === '')
+        ? QUEST_STATE.SKIP
+        : num(rawMark, QUEST_STATE.SKIP);
       const clearedAt = (cleared[i] === undefined) ? 0 : cleared[i];
+      const byClearedAt = isClearedAt(clearedAt);
+      const byMark = mark === QUEST_STATE.DONE;
       list.push({
         index: i,
         id: num(ids[i], 0),
         name: String(names[i]),
         senka: num(values[i], 0),
-        done: isClearedAt(clearedAt),
+        done: byClearedAt || byMark,
+        doneBy: byClearedAt ? 'clearedAt' : (byMark ? 'mark' : ''),
         clearedAt: clearedAt,
         state: mark,
         planned: mark === QUEST_STATE.PLAN,
-        markedDone: mark === QUEST_STATE.DONE
+        markedDone: byMark
       });
     }
     return {

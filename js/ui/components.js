@@ -46,6 +46,8 @@
       text += ' 本月是季度第三月，此时完成季常，战果会直接失效（不计入次月）。';
       tone = 'alert-error';
     }
+    // 逐项提示落在任务行旁（哪个任务没被计入、可点「强制计入」），见 ui/pages/tasks.js
+    text += ' 已经勾选的任务若因此未被计入本月，会在该任务项旁标出「未被计入本月」并给出强制计入入口。';
     return '<div class="alert ' + tone + '">' + U.escapeHtml(text) + '</div>';
   }
 

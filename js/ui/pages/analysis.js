@@ -433,7 +433,7 @@
     if (!data) {
       body = '<div class="empty-inline">该月还没有 poi 战果线快照。' +
         '到「战果记录」页同步一次 poi 数据（' +
-        '<code>%APPDATA%\\roaming\\poi\\achieve\\achieve.json</code>）后即可查看。</div>';
+        '<code>%APPDATA%\\roaming\\poi\\plugin-data\\poi-plugin-senka-tracker\\senka-tracker.json</code>）后即可查看。</div>';
     } else if (!hasAnyHis) {
       body = '<div class="empty-inline">该月快照里还没有战果线数据。</div>';
     } else if (!hasChartJs()) {

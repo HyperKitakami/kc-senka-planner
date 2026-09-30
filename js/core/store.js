@@ -434,6 +434,8 @@
       if (normalizeStepProgress(existing.stepProgress) &&
           !willResetProgressOnUncomplete(templateId, periodId)) {
         const kept = Object.assign({}, existing, { completed: false });
+        // 完成位一关，「强制计入本月」的覆盖也跟着作废 —— 它描述的是"这一次完成"
+        delete kept.forceAttributionMonth;
         await persist('taskRecords', kept);
         upsert(state.taskRecords, kept, 'id');
         emit('change');
@@ -460,8 +462,48 @@
       completed: true,
       completedAt: toIso(completedAt)
     };
+    // ⚠️ 这里**重建**记录，因此 `forceAttributionMonth`（归属覆盖）不会被带过来 ——
+    //    重新勾一次完成视为"这一次新的完成"，覆盖要重新确认（取消完成时同理，见上）。
     const progress = normalizeStepProgress(existing && existing.stepProgress);
     if (progress) next.stepProgress = progress;
+    await persist('taskRecords', next);
+    upsert(state.taskRecords, next, 'id');
+    emit('change');
+    return next;
+  }
+
+  /**
+   * 设置 / 清除某条完成记录的**归属覆盖**（`TaskRecord.forceAttributionMonth`）。
+   *
+   * 这是任务页「强制计入本月」的落点：过了归属截止时刻（任务 13:00 / EO 21:00）才勾的
+   * 任务，自然归属会落到次月，季常在季度第三月甚至会直接失效 —— 用户显式要求计入本月时
+   * 写这个字段，`KC.calc.tasks.periodAttributionMonth` 会优先返回它。
+   *
+   * ⛔ 只该由**当前归属月**的操作触发：往月补录是把完成时刻写进目标月内
+   *   （见 ui/pages/tasks.js 的 backfillAt），不需要覆盖。此处不做月份校验，
+   *   由调用方（页面）负责，避免把"现在几点"的判定塞进数据层。
+   *
+   * ⚠️ 覆盖只对**已完成**的记录有意义（未完成的记录不参与归属统计），
+   *   因此记录不存在或 completed !== true 时直接返回 null、不写库。
+   *
+   * @param {string} templateId
+   * @param {string} periodId
+   * @param {string|null} monthKey 'YYYY-MM' 表示强制计入该月；null / '' 表示清除覆盖
+   * @returns {Promise<object|null>} 更新后的记录；不满足条件时 null
+   */
+  async function setTaskForceMonth(templateId, periodId, monthKey) {
+    const existing = getTaskRecord(templateId, periodId);
+    if (!existing || !existing.completed) return null;
+
+    const next = Object.assign({}, existing);
+    const month = String(monthKey || '');
+    if (!month) {
+      delete next.forceAttributionMonth;
+    } else {
+      if (!/^\d{4}-\d{2}$/.test(month)) return null;
+      next.forceAttributionMonth = month;
+    }
+
     await persist('taskRecords', next);
     upsert(state.taskRecords, next, 'id');
     emit('change');
@@ -881,6 +923,7 @@
     getCurrentTaskRecord: getCurrentTaskRecord,
     setTaskCompleted: setTaskCompleted,
     setTasksCompletedBatch: setTasksCompletedBatch,
+    setTaskForceMonth: setTaskForceMonth,
     setTaskStepProgress: setTaskStepProgress,
     willResetProgressOnUncomplete: willResetProgressOnUncomplete,
     // 规划池

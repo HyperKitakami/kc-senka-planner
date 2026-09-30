@@ -9,7 +9,7 @@
      · 任务模板只描述任务本身，不保存任何完成状态（完成状态存于 TaskRecord）。
 
    EX 预设任务（季常 / 年常「任务战果」）：
-     · `poiName` 是 poi 插件 `achieve.json` 里 `zName` 的写法，**只用于 poi 同步匹配**，
+     · `poiName` 是 poi 插件数据文件里 `zName` 的写法，**只用于 poi 同步匹配**，
        不写进模板（与 EO 用 `name` 对 `rankuex` 的做法不同 —— EX 的
        本工具展示名与 poi 内名并不一致，必须分开存）。
      · 季常（QUARTERLY）可经 poi 的 `zcleartslist` 自动同步；

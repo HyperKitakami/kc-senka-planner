@@ -659,6 +659,53 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .tag-off { background: var(--danger-soft); color: var(--danger); }
 
 /* --------------------------------------------------------------------------
+   任务页：归属提示（本月勾了但没被计入 —— 过了归属截止时刻）
+   徽标 + 「强制计入 / 取消强制」小按钮，见 js/calc/tasks.js attributionNotice
+   -------------------------------------------------------------------------- */
+
+.attrib-note {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* 已强制计入：改成主色调，与"未被计入"的警示色区分 */
+.attrib-note.is-forced {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+.attrib-btn {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 18px;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.attrib-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+/* --------------------------------------------------------------------------
    任务页：表单 / 勾选 / 规划池
    -------------------------------------------------------------------------- */
 

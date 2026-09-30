@@ -13,6 +13,10 @@
            季常在季度第三月（2/5/8/11）末日 13:00 之后完成则直接失效。
        绝不能"按月份反查周期"——跨月的季常/年常周期会被它覆盖的每一个月
        重复命中：Q3 周期会在 9/10/11 三个月各计一次，年度周期会在 12 个月各计一次。
+     · **归属覆盖**：`TaskRecord.forceAttributionMonth` 是用户的显式覆盖（「强制计入本月」），
+       只在任务页的**当前月**流程写入。过了归属截止时刻才勾的任务，自然归属会落到次月、
+       季常甚至直接失效，界面会在任务行旁提示「未被计入」并给出强制入口
+       （见 `attributionNotice`）。覆盖生效时该记录只归属那一个月，不变量依然成立。
      · 规划池战果 —— 已勾选且"当前周期"尚未完成的任务战果之和；已完成任务不重复计入
    ========================================================================== */
 (function (KC) {
@@ -158,7 +162,7 @@
   const VOID_MONTH = 'void';
 
   /**
-   * 某条完成记录的**战果归属月**（'YYYY-MM'）。
+   * 某条完成记录的**自然归属月** —— 纯按完成时刻算，不考虑用户的显式覆盖。
    *
    * 优先用完成时刻 completedAt；缺失时回退到该周期的起算时刻。
    *
@@ -177,7 +181,7 @@
    * @returns {string|null} 'YYYY-MM'；VOID_MONTH 表示已失效；
    *   无法判定时返回 null（如无完成时刻且周期无起算时刻的事件/长期任务）
    */
-  function periodAttributionMonth(record, period, template) {
+  function naturalAttributionMonth(record, period, template) {
     let at = null;
     if (record && record.completedAt) {
       const d = new Date(record.completedAt);
@@ -198,6 +202,91 @@
       if (voided) return VOID_MONTH;
     }
     return KC.periods.taskAttributionMonthOf(at);
+  }
+
+  /** 归一化 `TaskRecord.forceAttributionMonth`；非法值（含 'void'）一律视为未设置 */
+  function forceMonthOf(record) {
+    const raw = record && record.forceAttributionMonth;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const s = String(raw);
+    return /^\d{4}-\d{2}$/.test(s) ? s : null;
+  }
+
+  /**
+   * 某条完成记录的**战果归属月**（'YYYY-MM'）。
+   *
+   * = 用户的显式覆盖（`TaskRecord.forceAttributionMonth`，没有就跳过）
+   *   ?? naturalAttributionMonth 的自然判定。
+   *
+   * ⚠️ 覆盖字段是**「强制计入本月」**这条用户操作的落点（docs/04_calculation.md §4.6）：
+   *    月末过了归属截止时刻之后才勾的任务，自然归属会落到次月、季常甚至会直接失效，
+   *    但用户可能确实希望把它算进本月。覆盖一旦写进记录，这条记录就**恰好归属那一个月**
+   *    （不会同时算进自然归属月），"每条记录恰好计一次"的不变量依然成立。
+   *
+   * ⚠️ 覆盖**只由任务页的当前月流程写入**；往月补录走的是"把完成时刻落在目标月内"
+   *    （见 ui/pages/tasks.js 的 backfillAt），不写这个字段。
+   */
+  function periodAttributionMonth(record, period, template) {
+    return forceMonthOf(record) || naturalAttributionMonth(record, period, template);
+  }
+
+  /**
+   * 「本月勾了，但没被算进本月」的提示模型（只在**当前归属月**下成立）。
+   *
+   * 场景：本月末日 13:00（任务）/ 21:00（EO）一过，再勾完成就会归到次月，
+   * 季常在季度第三月甚至会直接失效 —— 用户看到的是"勾了却不涨战果"。
+   * 本函数把这件事说成结构化事实，交给 UI 在任务行旁提示，并提供「强制计入」入口。
+   *
+   * ⛔ **只在当前归属月生效**：浏览历史月份时一律返回 `state: ''`（往月补录由
+   *    backfillAt 把完成时刻写进目标月内，不需要也不该用覆盖）。
+   *
+   * @param {object} template
+   * @param {object|null} record
+   * @param {object} period 该记录/任务对应的周期
+   * @param {string} month 当前浏览的归属月（'YYYY-MM'）
+   * @param {Date} [now]
+   * @returns {{state:string, counted:boolean, forced:boolean, voided:boolean,
+   *            targetMonth:string|null, cutoffHour:number, isEo:boolean, month:string}}
+   *   state: ''（无需提示）| 'missed'（算到次月）| 'void'（直接失效）| 'forced'（已强制计入本月）
+   */
+  function attributionNotice(template, record, period, month, now) {
+    now = now || new Date();
+    const isEo = !!(template && template.taskGroup === 'EO');
+    const empty = {
+      state: '', counted: true, forced: false, voided: false,
+      targetMonth: null, cutoffHour: isEo ? 21 : 13, isEo: isEo, month: String(month || '')
+    };
+    if (!template || !month) return empty;
+    // 往月：补录不涉及覆盖，不做任何提示
+    if (String(month) !== KC.periods.currentAttributionMonth(now)) return empty;
+    if (!record || !record.completed) return empty;
+
+    const forced = forceMonthOf(record);
+    const natural = naturalAttributionMonth(record, period, template);
+    const targetMonth = (natural && natural !== VOID_MONTH) ? natural : null;
+    const voided = natural === VOID_MONTH;
+
+    // 没有覆盖：只要自然归属不是本月，就是"未被计入本月"
+    if (!forced) {
+      if (natural === month) return empty;
+      return {
+        state: voided ? 'void' : 'missed',
+        counted: false, forced: false, voided: voided,
+        targetMonth: targetMonth, cutoffHour: isEo ? 21 : 13, isEo: isEo, month: String(month)
+      };
+    }
+
+    // 有覆盖：本来就不该计入本月时才值得提示（否则覆盖是多余的，静默按正常处理）
+    if (natural === month) {
+      return {
+        state: '', counted: true, forced: true, voided: false,
+        targetMonth: null, cutoffHour: isEo ? 21 : 13, isEo: isEo, month: String(month)
+      };
+    }
+    return {
+      state: 'forced', counted: true, forced: true, voided: voided,
+      targetMonth: targetMonth, cutoffHour: isEo ? 21 : 13, isEo: isEo, month: String(month)
+    };
   }
 
   /**
@@ -375,6 +464,9 @@
     periodForMonth: periodForMonth,
     VOID_MONTH: VOID_MONTH,
     periodAttributionMonth: periodAttributionMonth,
+    naturalAttributionMonth: naturalAttributionMonth,
+    forceMonthOf: forceMonthOf,
+    attributionNotice: attributionNotice,
     periodsInAttributionWindow: periodsInAttributionWindow,
     completedSenkaInMonth: completedSenkaInMonth,
     findRecord: findRecord,

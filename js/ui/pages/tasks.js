@@ -123,17 +123,21 @@
 
   /** 列表行 / 分组统计用的视图模型：完成状态按"所选期次"判定 */
   function itemView(template, month) {
+    const now = new Date();
     const period = pickedPeriod(template, month);
     // readRecord 会对"带进度但周期已过期"的记录做重置；补录历史周期时
     // 界面走的是"当前此期就是我要记的那一期"，因此这里传 pickedPeriod 的 id。
     const record = period.id
-      ? KC.calc.tasks.readRecord([], KC.store.state.taskRecords, template, period.id, new Date())
+      ? KC.calc.tasks.readRecord([], KC.store.state.taskRecords, template, period.id, now)
       : null;
     return {
       template: template,
       period: period,
       record: record,
-      completed: KC.calc.tasks.isCompleted(record, template)
+      completed: KC.calc.tasks.isCompleted(record, template),
+      // 归属提示：过了归属截止时刻才勾的任务会被算到次月（季常甚至直接失效）。
+      // 只在**当前归属月**下才有值，往月补录恒为 state:''（见 calc/tasks.attributionNotice）。
+      notice: KC.calc.tasks.attributionNotice(template, record, period, month, now)
     };
   }
 
@@ -259,7 +263,7 @@
   }
 
   /* ------------------------------------------- poi EO 批量同步 */
-  const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\achieve\\achieve.json';
+  const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\plugin-data\\poi-plugin-senka-tracker\\senka-tracker.json';
 
   /** 「预设 EX 任务」卡片里的 poi 季常同步区 */
   function renderPoiExSlot() {
@@ -423,12 +427,15 @@
    * poi 季常同步区（「预设 EX 任务」卡片内）。
    *
    * 与 EO 面板同口径：**只正向勾选，绝不自动取消**。
-   * 数据来自 poi 的 `zName` / `zcleartslist`（`zcleartslist[i]` = 第 i 项的**完成时刻**，
-   * `0` = 未完成），只覆盖季常 —— 年常（AL / 机动）在 poi 数据里没有对应字段，只能手动勾选。
+   * 数据来自 poi 的 `zName` / `zcleartslist` / `extraSenkalist`，**两个来源任一成立即已完成**：
+   *   · `zcleartslist[i]` = 第 i 项的**完成时刻**（`0` = 未完成）；
+   *   · `extraSenkalist[i] === 2` = 三态标记里的「已完成」—— 插件从游戏任务列表
+   *     （`api_state >= 2`）主动对账写入，能覆盖"领奖时 poi 没开 / 奖励早就领过"。
+   * 只覆盖季常 —— 年常（AL / 机动）在 poi 数据里没有对应字段，只能手动勾选。
    *
-   * ⚠️ poi **每个战果月**都会把 `zcleartslist` 重置为全 0（它只用这个字段算当月战果增量），
-   * 所以清单只说明「**当前战果月内**完成过」，不覆盖本季更早的月份 —— 文案必须讲清楚，
-   * 否则用户会以为"poi 说未完成 = 本季没做"。
+   * ⚠️ poi **每个战果月**都会把 `zcleartslist` / `extraSenkalist` 一起重置
+   * （它只用这两个字段算当月战果增量），所以清单只说明「**当前战果月内**完成过」，
+   * 不覆盖本季更早的月份 —— 文案必须讲清楚，否则用户会以为"poi 说未完成 = 本季没做"。
    */
   function poiExPanel() {
     const diff = poiExDiff();
@@ -479,8 +486,10 @@
             '<span class="poi-status-line">' + stat + '</span>' +
           '</div>'
         : '<p class="poi-status-line">' + stat + '</p>') +
-      '<p class="form-hint">数据来自 poi 的季常任务清单（<code>zName</code> / <code>zcleartslist</code>，' +
-        '后者是每项的完成时刻，0 表示未完成）。⚠️ poi 每个战果月会重置这份清单，' +
+      '<p class="form-hint">数据来自 poi 的战果任务清单（<code>zName</code> / <code>zcleartslist</code> / ' +
+        '<code>extraSenkalist</code>）：<code>zcleartslist</code> 记录每项的完成时刻（0 = 未完成），' +
+        '<code>extraSenkalist</code> 是每项的三态标记（2 = 已完成，由 poi 对账游戏任务列表写入）——' +
+        '两者任一成立即视为已完成。⚠️ poi 每个战果月会重置这两项，' +
         '所以它只反映「当前战果月内」的完成 —— 本季更早月份完成的季常不会出现在这里，' +
         '请自行核对后手动勾选。仅覆盖季常；年常（AL / 机动）poi 未提供完成标记，请在下方列表手动勾选。' +
         '快照存于本机轻量存储，不参与导入导出。</p>' +
@@ -503,8 +512,9 @@
       message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项季常任务标记为已完成' +
         '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
         (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
-        '\n\n依据是 poi 的季常任务清单（zcleartslist 记录每项的完成时刻；' +
-        'poi 每个战果月会重置这份清单，所以只覆盖「当前战果月内」完成的项）。' +
+        '\n\n依据是 poi 的季常任务清单（zcleartslist 记录每项的完成时刻，' +
+        'extraSenkalist 的三态标记 2 = 已完成，由 poi 对账游戏任务列表写入；' +
+        'poi 每个战果月会重置这两项，所以只覆盖「当前战果月内」完成的项）。' +
         '已有进度节点的任务会保留其进度；勾选后仍可逐项取消完成。' +
         '季常战果有末日 13:00 归属边界，在季度第三月此时勾选会直接失效。',
       okText: '勾选 ' + diff.done.length + ' 项'
@@ -809,10 +819,49 @@
   }
 
   /**
+   * 归属提示的徽标文字与悬停说明（见 calc/tasks.attributionNotice）。
+   *
+   * 三种状态：本月过了归属截止才勾，自然归属落到次月（'missed'）或直接失效（'void'），
+   * 以及用户已经强制计入本月（'forced'）。
+   */
+  function attribText(n) {
+    const what = n.isEo ? 'EO 战果' : '任务战果';
+    const cutoff = n.isEo
+      ? '本期末日 21:00（EO 与出击同一结算时刻）'
+      : '本期末日 13:00（任务战果归属截止）';
+
+    if (n.state === 'forced') {
+      const because = n.voided
+        ? '按规则它本该直接失效'
+        : '按规则它本该计入 ' + U.monthLabel(n.targetMonth);
+      return {
+        label: '已强制计入本月',
+        tip: '这笔' + what + '已被你强制计入 ' + U.monthLabel(n.month) + '（' + because + '）。' +
+          '点「取消强制」即恢复按归属规则计算。'
+      };
+    }
+    if (n.state === 'void') {
+      return {
+        label: '未被计入（已失效）',
+        tip: '这笔' + what + '的完成时刻已过' + cutoff + '，而本月又是季度第三月 —— ' +
+          '按规则它哪个战果月都不算（战果蒸发）。要计入 ' + U.monthLabel(n.month) +
+          ' 请点「强制计入」。'
+      };
+    }
+    return {
+      label: '未被计入本月',
+      tip: '这笔' + what + '的完成时刻已过' + cutoff + '，按规则应计入 ' +
+        U.monthLabel(n.targetMonth) + '，因此不参与 ' + U.monthLabel(n.month) + ' 的统计。' +
+        '确实要算进本月请点「强制计入」。'
+    };
+  }
+
+  /**
    * 任务名单元格。
    * 带节点的任务多一个折叠箭头 + 「进度 n/m」角标；默认折叠（见 pageState.expanded）。
+   * 完成但未被计入本月的任务，再挂一个归属徽标 + 「强制计入 / 取消强制」按钮（当前月才有）。
    */
-  function nameCell(item) {
+  function nameCell(item, month) {
     const t = item.template;
     const steps = t.steps || [];
     const dn = displayName(t);
@@ -832,12 +881,28 @@
         stat.done + '/' + stat.total + '</span>';
     }
 
+    const n = item.notice;
+    let attrib = '';
+    if (n && n.state) {
+      const at = attribText(n);
+      const forced = n.state === 'forced';
+      attrib = '<span class="attrib-note' + (forced ? ' is-forced' : '') +
+        '" title="' + U.escapeHtml(at.tip) + '">' + at.label + '</span>' +
+        '<button type="button" class="attrib-btn" data-act="force-month" data-id="' +
+        U.escapeHtml(t.id) + '" title="' +
+        U.escapeHtml(forced
+          ? '恢复按归属规则计算（' + (n.voided ? '直接失效' : '计入 ' + U.monthLabel(n.targetMonth)) + '）'
+          : '把这笔战果计入 ' + U.monthLabel(month)) + '">' +
+        (forced ? '取消强制' : '强制计入') + '</button>';
+    }
+
     return '<td class="cell-name">' + toggle + '<span class="task-name-text"' +
       (dn.tip ? ' title="' + U.escapeHtml(dn.tip) + '"' : '') + '>' +
       U.escapeHtml(dn.text) + '</span>' +
       (t.isSystem ? '<span class="tag tag-sys">系统</span>' : '') +
       (t.enabled === false ? '<span class="tag tag-off">已停用</span>' : '') +
       badge +
+      attrib +
       '</td>';
   }
 
@@ -939,7 +1004,7 @@
 
     const main = '<tr class="' + cls + '">' +
       check +
-      nameCell(item) +
+      nameCell(item, month) +
       '<td class="col-senka">' + U.formatNumber(t.senkaValue) + '</td>' +
       periodCell(item, month) +
       '<td class="cell-check">' +
@@ -1237,18 +1302,63 @@
     if (att === KC.calc.tasks.VOID_MONTH) {
       if (isEo) {
         return { tone: 'error', text: base +
-          '。注意：EO 战果与出击同为末日 21:00 结算，21:00～23:00（血条复活前）打掉的 EO 不给战果。' };
+          '。注意：EO 战果与出击同为末日 21:00 结算，21:00～23:00（血条复活前）打掉的 EO 不给战果。' +
+          '确实要算进本月，可点该项旁的「强制计入」。' };
       }
       return { tone: 'error', text: base +
-        '。注意：本月是季度第三月，已过末日 13:00，这笔季常战果会直接失效。' };
+        '。注意：本月是季度第三月，已过末日 13:00，这笔季常战果会直接失效。' +
+        '确实要算进本月，可点该项旁的「强制计入」。' };
     }
     const natural = U.monthKeyOf(U.toDateKey(now));
     if (att && att !== natural) {
       const cutoff = isEo ? 'EO 战果结算时刻（本月末日 21:00）' : '本月任务战果归属截止时间';
       return { tone: 'ok', text: base + '。已过' + cutoff + '，战果计入 ' +
-        U.monthLabel(att) + '。' };
+        U.monthLabel(att) + '。要算进本月可点该项旁的「强制计入」。' };
     }
     return { text: base, tone: 'ok' };
+  }
+
+  /**
+   * 「强制计入本月」/「取消强制」。
+   *
+   * 过了归属截止时刻才勾的任务，自然归属会落到次月、季常甚至会直接失效 ——
+   * 这里按用户的显式选择写 / 清 `TaskRecord.forceAttributionMonth`
+   * （见 calc/tasks.attributionNotice 与 docs/04_calculation.md §4.6）。
+   *
+   * ⛔ 只对**当前归属月**开放：往月补录走的是"把完成时刻落在目标月内"（backfillAt），
+   *    既不需要也不该用覆盖。往月若通过其他兜底路径调到这里，直接拒绝。
+   */
+  async function toggleForceMonth(id) {
+    const template = KC.store.getTaskTemplate(id);
+    if (!template) return;
+
+    const now = new Date();
+    const month = planningMonth();
+    const period = pickedPeriod(template, month);
+    if (!period.id) return;
+
+    if (month !== KC.periods.currentAttributionMonth(now)) {
+      KC.toast('「强制计入」只用于当前月；往月补录直接勾选完成即可。', 'error');
+      return;
+    }
+
+    const view = itemView(template, month);
+    const n = view.notice;
+    if (!n || !n.state) return;
+    const clearing = n.state === 'forced';
+
+    try {
+      await KC.store.setTaskForceMonth(id, period.id, clearing ? null : month);
+      if (clearing) {
+        const back = n.voided ? '（按规则直接失效）' : '（按规则计入 ' + U.monthLabel(n.targetMonth) + '）';
+        KC.toast('已取消强制计入：' + template.name + back, 'ok');
+      } else {
+        KC.toast('已强制计入 ' + U.monthLabel(month) + '：' + template.name +
+          '（' + U.formatNumber(template.senkaValue) + '）', 'ok');
+      }
+    } catch (err) {
+      KC.toast(err.message, 'error');
+    }
   }
 
   /**
@@ -1480,6 +1590,8 @@
       removeStepRow(btn);
     } else if (act === 'toggle-steps') {
       toggleSteps(btn.dataset.id);
+    } else if (act === 'force-month') {
+      toggleForceMonth(btn.dataset.id);
     } else if (act === 'step-plus') {
       bumpStep(btn.dataset.id, btn.dataset.code, 1);
     } else if (act === 'step-minus') {

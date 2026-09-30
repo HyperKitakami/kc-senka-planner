@@ -6,7 +6,7 @@
      · poiData.js    = **IO 外壳**，负责取到 JSON、落快照、按月份取数
 
    ── 为什么要快照 ─────────────────────────────────────────────
-   poi-plugin-achievement **不保存历史**：achieve.json 里的 myhis / exphis /
+   poi 战果插件 **不保存历史**：数据文件里的 myhis / exphis /
    rNhis 都是**当月**数据，下个月会被覆盖。所以「本月的每日战果」「上月的
    战果线」这类跨月数据，只能靠本工具自己存下来。
 
@@ -162,7 +162,8 @@
    *
    * ⚠️ **优先用 <input type="file">，不用 File System Access API**。
    *
-   * 原因：poi 的 achieve.json 位于 `%APPDATA%\poi\achieve\`，而 Chrome / Edge 把
+   * 原因：poi 的战果数据位于 `%APPDATA%\poi\plugin-data\poi-plugin-senka-tracker\`
+   * （原版插件为 `%APPDATA%\poi\achieve\`），而 Chrome / Edge 把
    * `%APPDATA%` 之类视为**敏感 / 系统目录**。此时 showOpenFilePicker 会直接弹出
    * 「无法打开文件，因为含有系统文件」并抛 **AbortError**（见 MDN 的 Exceptions：
    * "或者如果用户代理认为任何选定的文件过于敏感或危险"）。
@@ -212,7 +213,7 @@
         return {
           ok: false,
           error: '文件选择被中止。若系统提示「含有系统文件」，' +
-            '请把 achieve.json 复制到普通目录（如桌面）后再选择。'
+            '请把 senka-tracker.json 复制到普通目录（如桌面）后再选择。'
         };
       }
       return { ok: false, error: (err && err.message) || '文件选择失败。' };
@@ -223,7 +224,7 @@
    * <input type="file"> —— **主路径**。
    *
    * 走浏览器原生文件对话框，不像 File System Access API 那样受
-   * 「敏感 / 系统目录」限制，因此可以正常选中 %APPDATA% 下的 achieve.json。
+   * 「敏感 / 系统目录」限制，因此可以正常选中 %APPDATA% 下的 poi 数据文件。
    */
   function pickViaInput() {
     return new Promise(function (resolve) {
@@ -551,20 +552,31 @@
   }
 
   /**
-   * 把 poi 的**季常任务战果**完成状态与本工具的任务记录做差异对比。
+   * 把 poi 的**战果任务战果**完成状态与本工具的任务记录做差异对比。
    *
-   * 数据来源：poi 的 `zName` / `zValue` / `zcleartslist`（同序的三张表），
-   * ⛔ `zcleartslist[i]` 是第 i 项的**完成时刻**（ISO 时间戳），**`0` = 未完成**
-   * —— 早期把它当成"已完成清单"（`=== 0` 即完成）是**反的**，会让全部季常都被判成已完成。
+   * 数据来源：poi 的 `zName` / `zValue` / `zcleartslist` / `extraSenkalist`
+   * （前四者同序）。**两个来源任一成立即视为已完成**：
+   *
+   *   ① `zcleartslist[i]` —— 第 i 项的**完成时刻**（ISO 时间戳），**`0` = 未完成**
+   *      —— 早期把它当成"已完成清单"（`=== 0` 即完成）是**反的**，
+   *      会让全部任务都被判成已完成（见 `poiSource.extraQuestStatus`）。
+   *   ② `extraSenkalist[i] === 2` —— 三态标记（0 计划攻略 / 1 计划不攻略 / 2 已完成）
+   *      里的「已完成」。它是插件**主动对账**游戏任务列表写下的：拿到
+   *      `api_get_member/questlist` 就按 `api_request_no`（Bq8 这类编号）匹配、
+   *      `api_state >= 2` 即写 2。因此「领奖时 poi 没开 / 奖励早就领过」这两种
+   *      ① 永远看不到的情况只能靠它补上 —— 实测本机 `zcleartslist` 全 0 而
+   *      `extraSenkalist = [1,1,2,1,1,1,1]`（Bq8 泊地警戒已完成），只看 ① 会漏判。
+   *      ⚠️ 只有 `2` 算完成，`0` / `1` 都只是计划。
+   *
    * **只有季常**能这么同步 —— 年常在 poi 数据里没有对应字段（`poiName: null`），
    * 因此只比对带 `poiName` 且 `resetCycle === 'QUARTERLY'` 的 EX 模板。
    *
-   * ⚠️ **口径范围**：poi 每个战果月会把 `zcleartslist` 重置为全 0（它只用来算当月战果增量），
-   * 所以这里判定的是「**当前战果月内**是否完成」，**不覆盖本季更早的月份**。
-   * 换言之：poi 说"未完成"不等于"本季没做"，UI 必须把这个范围讲清楚；
-   * 好在同步只做正向勾选，漏判只会少勾、不会勾错。
+   * ⚠️ **口径范围**：插件每个战果月会把 `zcleartslist` 与 `extraSenkalist` 一起重置
+   * （它只用来算当月战果增量），所以这里判定的是「**当前战果月内**是否完成」，
+   * **不覆盖本季更早的月份**。换言之：poi 说"未完成"不等于"本季没做"，
+   * UI 必须把这个范围讲清楚；好在同步只做正向勾选，漏判只会少勾、不会勾错。
    *
-   * 与 `eoDiff` 的关键差别：poi 这里给的是**完成时刻清单**（而 `rankuex` 是未完成清单），
+   * 与 `eoDiff` 的关键差别：poi 这里给的是**完成清单**（而 `rankuex` 是未完成清单），
    * 且清单本身就是我们关心的全集，所以「poi 里有、模板里没有」的名字直接忽略，
    * 不会进 `unknown`（poi 的清单纯手工维护，可能含本工具不打算跟踪的任务）。
    *
@@ -628,6 +640,8 @@
         poiDone: poiDone,
         // poi 侧的完成时刻（0 = 未完成）——UI 可用来提示"本战果月内完成"
         clearedAt: q.clearedAt,
+        // 'clearedAt'（有完成时刻）/ 'mark'（只有三态标记 = 2）/ ''
+        doneBy: q.doneBy || '',
         senka: Number(t.senkaValue) || 0
       };
       if (poiDone && !mine) done.push(row);
