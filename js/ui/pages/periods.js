@@ -112,7 +112,7 @@
     return '<div class="panel">' +
       '<div class="panel-head">' +
         '<h2>任务更新周期</h2>' +
-        '<span class="panel-count">任务刷新边界 · 一律 04:00</span>' +
+        '<span class="panel-count">任务刷新边界 · 一律 04:00（北京时间）</span>' +
       '</div>' +
       '<p class="panel-desc">决定任务<strong>什么时候刷新</strong>（进入新周期）。' +
         '这个边界<strong>只用于判定任务刷新</strong>，不参与战果归属、所需日均与预测。</p>' +
@@ -174,7 +174,7 @@
     return '<div class="panel">' +
       '<div class="panel-head">' +
         '<h2>战果结算周期</h2>' +
-        '<span class="panel-count">战果归属边界 · 13:00 / 21:00</span>' +
+        '<span class="panel-count">战果归属边界 · 13:00 / 21:00（北京时间）</span>' +
       '</div>' +
       '<p class="panel-desc">决定战果<strong>算进哪个月</strong>，以及本月战果什么时候定格。' +
         '三种战果来源的截止时刻不同：出击与 EO 看 <strong>末日 21:00</strong>，' +
@@ -200,6 +200,23 @@
       '</div>';
   }
 
+  /* -------------------------------------------------------- 时间口径标示 */
+
+  /**
+   * 页面顶部的时间口径提示条。
+   *
+   * 本页所有时刻一律按**北京时间（UTC+8）**书写（docs/03_data.md §7.1），
+   * 而游戏内以 JST（UTC+9）显示、比北京时间快 1 小时。不写明的话，
+   * 玩家会拿游戏里看到的时刻对照本页，反而怀疑「末日 21:00 结算」是写错了。
+   */
+  function tzNote() {
+    return '<div class="alert alert-info">' +
+      '<strong>时间口径：本页所有时刻都是北京时间（UTC+8）。</strong>' +
+      '游戏内以 JST（UTC+9）显示，比本页快 1 小时 —— ' +
+      '本页写的「本月末日 21:00」，在游戏里看到的是同日 22:00。' +
+      '</div>';
+  }
+
   /* -------------------------------------------------------------- 渲染 */
 
   function render() {
@@ -213,13 +230,16 @@
         '<div>' +
           '<h1>周期查询</h1>' +
           '<p class="page-sub">两套时间边界速查：任务刷新（04:00）与战果结算（末日 13:00 / 21:00）。' +
-            '快照时刻 ' + U.escapeHtml(fmtMoment(data.now)) + '</p>' +
+            '所有时刻均为<strong>北京时间（UTC+8）</strong>；快照时刻 ' +
+            U.escapeHtml(fmtMoment(data.now)) + '</p>' +
         '</div>' +
         '<div class="head-actions">' +
           '<button type="button" class="btn btn-ghost" data-act="refresh-periods">刷新</button>' +
           '<button type="button" class="btn btn-primary" data-act="goto-records">记录今日战果</button>' +
         '</div>' +
       '</div>' +
+
+      tzNote() +
 
       taskBlock(data) +
       attributionBlock(data);
