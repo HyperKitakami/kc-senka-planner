@@ -152,13 +152,13 @@
       return '<li><strong>' + U.escapeHtml(row.label) + '</strong>：' + U.escapeHtml(row.note) + '</li>';
     }).join('');
 
-    // 13:00 ～ 21:00 这段窗口：任务战果已归次月，出击战果还属本月
+    // 13:00 ～ 21:00 这段窗口：任务战果已归次月，出击 / EO 战果还属本月
     let gapAlert = '';
     if (a.inCutoffGap) {
       gapAlert = '<div class="alert alert-warn">' +
         '<strong>当前处于归属切换窗口</strong>（本月末日 13:00 ～ 21:00）：' +
         '现在完成的任务，战果计入 ' + U.escapeHtml(U.monthLabel(a.taskMonth)) +
-        '；而打出的出击战果仍计入 ' + U.escapeHtml(U.monthLabel(a.sortieMonth)) + '。' +
+        '；而打出的出击战果、打掉的 EO 仍计入 ' + U.escapeHtml(U.monthLabel(a.sortieMonth)) + '。' +
         '这正是两套边界必须分开看的原因。</div>';
     }
 

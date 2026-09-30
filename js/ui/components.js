@@ -25,6 +25,9 @@
    *
    * 首页 / 战果规划页 / 战果任务页共用这一份文案，避免各处口径走偏。
    *
+   * ⚠️ 只约束**任务战果**（EX / 活动 / 自定义）。EO 与出击同为本月末日 21:00 结算，
+   * 13:00～21:00 勾选的 EO 仍然计入本月，因此文案里必须点明这一点，否则用户会误以为 EO 也翻月了。
+   *
    * @param {string} planMonth 页面当前展示的战果归属月
    * @param {Date} [now] 便于测试注入
    * @returns {string} HTML（无需提示时返回空串）
@@ -37,6 +40,7 @@
 
     let text = '已过本月任务战果归属截止时间（本月末日 13:00）：现在完成的任务，战果计入 ' +
       U.monthLabel(U.addMonths(natural, 1)) + '。';
+    text += ' EO 战果不受此限：它与出击同为本月末日 21:00 结算，此刻勾选仍计入本月。';
     let tone = 'alert-warn';
     if (KC.periods.isQuarterLastMonth(natural)) {
       text += ' 本月是季度第三月，此时完成季常，战果会直接失效（不计入次月）。';

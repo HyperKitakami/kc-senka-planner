@@ -1215,8 +1215,9 @@
 
   /**
    * 勾选/取消完成后的提示文案。
-   * 补录历史周期时说明期次与去向；本月末日 13:00 之后完成的任务按归属边界说明去向，
-   * 季常在季度第三月此时完成会直接失效，单独警告。
+   * 补录历史周期时说明期次与去向。
+   * 归属边界按来源分两套：EO 与出击同为本月末日 21:00 结算（21:00～23:00 血条复活前无效）；
+   * 其它任务为本月末日 13:00，季常在季度第三月此时完成会直接失效 —— 单独警告。
    * @returns {{text: string, tone: string}}
    */
   function completeToast(template, checked, now, month, period) {
@@ -1228,17 +1229,23 @@
         U.monthLabel(month) + '）', tone: 'ok' };
     }
 
+    const isEo = template.taskGroup === 'EO';
     const base = '已完成：' + template.name;
     const att = KC.calc.tasks.periodAttributionMonth(
       { completedAt: now.toISOString() }, null, template
     );
     if (att === KC.calc.tasks.VOID_MONTH) {
+      if (isEo) {
+        return { tone: 'error', text: base +
+          '。注意：EO 战果与出击同为末日 21:00 结算，21:00～23:00（血条复活前）打掉的 EO 不给战果。' };
+      }
       return { tone: 'error', text: base +
         '。注意：本月是季度第三月，已过末日 13:00，这笔季常战果会直接失效。' };
     }
     const natural = U.monthKeyOf(U.toDateKey(now));
     if (att && att !== natural) {
-      return { tone: 'ok', text: base + '。已过本月任务战果归属截止时间，战果计入 ' +
+      const cutoff = isEo ? 'EO 战果结算时刻（本月末日 21:00）' : '本月任务战果归属截止时间';
+      return { tone: 'ok', text: base + '。已过' + cutoff + '，战果计入 ' +
         U.monthLabel(att) + '。' };
     }
     return { text: base, tone: 'ok' };

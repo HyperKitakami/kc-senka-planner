@@ -271,6 +271,29 @@
     return at.getTime() >= attributionEnd(month, 'TASK').getTime() ? U.addMonths(month, 1) : month;
   }
 
+  /**
+   * 某时刻所属的「EO 战果归属月」。
+   *
+   * ⛔ EO 与任务战果是**两套口径**，绝不能复用 taskAttributionMonthOf：
+   *   · 区间为「上月末日 23:00 ～ 本月末日 21:00」——终点与出击同为 21:00，
+   *     起点却因血条 23:00 才复活而比出击晚 2 小时。
+   *   · 本月末日 21:00 ～ 23:00 是**死区**：本月已在 21:00 结算，血条要到 23:00 才复活，
+   *     这段时间打掉的 EO 不给战果（仍可拿勋章），返 null（不属于任何战果月）。
+   *   · 本月末日 23:00 血条复活之后打掉的 EO，已经属于**下个月**。
+   *
+   * @returns {string|null} 'YYYY-MM'；null 表示落在这段无效窗口内
+   */
+  function eoAttributionMonthOf(at) {
+    const month = U.monthKeyOf(U.toDateKey(at));
+    const p = String(month).split('-').map(Number);
+    // 血条复活时刻 = 本月末日 23:00 = 下月 EO 归属区间的起点
+    const revive = new Date(p[0], p[1] - 1, U.daysInMonth(month), ATTRIBUTION_START_HOUR.EO, 0, 0, 0);
+    if (at.getTime() >= revive.getTime()) return U.addMonths(month, 1);
+    if (at.getTime() >= attributionEnd(month, 'EO').getTime()) return null;
+    if (at.getTime() < attributionStart(month, 'EO').getTime()) return null;
+    return month;
+  }
+
   /** 某月是否为「季度第三月」（2/5/8/11 月）——季常战果在此月有失效例外 */
   function isQuarterLastMonth(monthKey) {
     return [2, 5, 8, 11].indexOf(Number(String(monthKey).split('-')[1])) >= 0;
@@ -288,6 +311,7 @@
     currentTaskAttributionMonth: currentTaskAttributionMonth,
     taskAttributionWindow: taskAttributionWindow,
     taskAttributionMonthOf: taskAttributionMonthOf,
+    eoAttributionMonthOf: eoAttributionMonthOf,
     isQuarterLastMonth: isQuarterLastMonth,
     elapsedDays: elapsedDays,
     remainingDays: remainingDays,
