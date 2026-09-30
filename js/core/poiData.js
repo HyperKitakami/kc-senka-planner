@@ -379,6 +379,9 @@
    *   2. 本工具 DailyRecord 的当月逐日累计 —— 快照缺失时的回退
    * 之所以不直接用 DailyRecord：记录页可能还没录，而快照是 poi 的原始事实。
    *
+   * ⚠️ **五条线共用一套下标**：`values[i]` 对应 `labels[i]`，而 labels = '1'…'N'，
+   * 即**下标 0 就是第 1 日**。没有采样的日子留 null（不画假值），不额外补起点。
+   *
    * @param {string} monthKeyStr 'YYYY-MM'
    * @param {Array} [dailyRecords] 该月的 DailyRecord（用于回退，可省略）
    * @returns {{days:number, labels:string[], lines:Array, source:string}|null}
@@ -402,6 +405,12 @@
     });
 
     // 自己的累计：优先 poi 快照的 myhis，其次 DailyRecord 累计
+    //
+    // ⚠️ **下标 0 = 第 1 日**（labels 是 '1'…'31'，与另外四条线同一套下标），
+    // 所以这里**绝不能**写 `myValues[0] = 0` 去补「月初 0 起点」——
+    // 那是把第 1 日的真实值覆盖成 0。曾这么写过：2026-10 的 myhis = {1: 448}
+    // 只含第 1 日一个采样，整条「我的累计」就被抹成 0（图例显示 0）。
+    // 无采样的日子保持 null（与战果线一致，不画假值）。
     let mySource = '';
     let myValues = null;
     const mySeries = ps.byDayLatest(snap.data.myhis, ceiling);
@@ -411,7 +420,6 @@
       myValues = daysRange(days).map(function (d) {
         return (d in map) ? map[d] : null;
       });
-      myValues[0] = 0;   // 月初起点，让折线从 0 起
       mySource = 'poi';
     } else {
       const records = Array.isArray(dailyRecords) ? dailyRecords : [];
@@ -429,7 +437,6 @@
           acc += sum[d];
           return KC.utils.round2(acc);
         });
-        myValues[0] = 0;
         mySource = 'records';
       }
     }
