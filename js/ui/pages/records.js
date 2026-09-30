@@ -13,8 +13,10 @@
        回车跳到下一格，Tab 同样按日期顺序前进；清空格子即删除该日记录。
 
    poi 数据同步（docs/... 「poi 数据接入」）：
-     · 手动选择 %APPDATA%\roaming\poi\plugin-data\poi-plugin-senka-tracker\senka-tracker.json
-       （浏览器沙箱不允许自动读路径；原版 poi-plugin-achievement 为 poi\achieve\achieve.json）
+     · 手动选择 %APPDATA%\poi\achieve\achieve.json（浏览器沙箱不允许自动读路径）
+       ⚠️ **面向用户的路径提示一律写原版 poi-plugin-achievement 的路径**（README 口径）。
+       重构版 poi-plugin-senka-tracker 落在 plugin-data\poi-plugin-senka-tracker\ 下的
+       senka-tracker.json，字段结构一致、同样能解析，但那是个人环境路径，不进 UI 文案。
      · 同步后：空白记录格显示「建议值」（= poi 的当日仅出击+演习战果）
      · 「一键填充空白项」把建议值写进所有**尚未记录**的日期
      · 同步即落一份本月快照（poi 会跨月覆盖，历史只能靠自己存）
@@ -56,8 +58,11 @@
   let unsubscribe = null;
   let handlers = null;
 
-  /** 推荐给用户手动选择的文件路径（浏览器无法自动读取，只能给参考） */
-  const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\plugin-data\\poi-plugin-senka-tracker\\senka-tracker.json';
+  /** 推荐给用户手动选择的文件路径（浏览器无法自动读取，只能给参考）
+   *  ⚠️ 写**原版 poi-plugin-achievement** 的路径（与 README 一致）。
+   *  重构版 poi-plugin-senka-tracker 的 plugin-data\...\senka-tracker.json 字段结构一致、
+   *  同样能解析，但那是个人环境路径，不作为面向用户的提示。 */
+  const POI_PATH_HINT = '%APPDATA%\\poi\\achieve\\achieve.json';
 
   /* ------------------------------------------------------------ 渲染片段 */
 
@@ -318,7 +323,7 @@
         '<p class="form-hint">本按钮走浏览器<strong>原生文件对话框</strong>，' +
           '可以正常选中 <code>%APPDATA%</code> 下的该文件。' +
           '若系统仍提示「无法打开，因为含有系统文件」，' +
-          '把 <code>senka-tracker.json</code> 复制到桌面等普通目录后再选择即可。</p>' +
+          '把 <code>achieve.json</code> 复制到桌面等普通目录后再选择即可。</p>' +
         foot();
     }
 

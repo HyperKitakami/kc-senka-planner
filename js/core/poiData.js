@@ -162,9 +162,9 @@
    *
    * ⚠️ **优先用 <input type="file">，不用 File System Access API**。
    *
-   * 原因：poi 的战果数据位于 `%APPDATA%\poi\plugin-data\poi-plugin-senka-tracker\`
-   * （原版插件为 `%APPDATA%\poi\achieve\`），而 Chrome / Edge 把
-   * `%APPDATA%` 之类视为**敏感 / 系统目录**。此时 showOpenFilePicker 会直接弹出
+   * 原因：poi 的战果数据位于 `%APPDATA%\poi\achieve\`（原版 poi-plugin-achievement），
+   * 而 Chrome / Edge 把 `%APPDATA%` 之类视为**敏感 / 系统目录**，
+   * 此时 showOpenFilePicker 会直接弹出
    * 「无法打开文件，因为含有系统文件」并抛 **AbortError**（见 MDN 的 Exceptions：
    * "或者如果用户代理认为任何选定的文件过于敏感或危险"）。
    *
@@ -213,7 +213,7 @@
         return {
           ok: false,
           error: '文件选择被中止。若系统提示「含有系统文件」，' +
-            '请把 senka-tracker.json 复制到普通目录（如桌面）后再选择。'
+            '请把 achieve.json 复制到普通目录（如桌面）后再选择。'
         };
       }
       return { ok: false, error: (err && err.message) || '文件选择失败。' };

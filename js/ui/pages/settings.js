@@ -274,7 +274,7 @@
     return '<div class="panel">' +
       '<div class="panel-head"><h2>poi 数据快照</h2>' +
         '<span class="panel-count">' + months.length + ' 个月</span></div>' +
-      '<p class="panel-desc">poi 战果插件（数据文件 <code>senka-tracker.json</code>）只保存当月数据，下个月会被覆盖。' +
+      '<p class="panel-desc">poi 战果插件（数据文件 <code>achieve.json</code>）只保存当月数据，下个月会被覆盖。' +
         '本工具在「战果记录」页同步时会把关键字段存成本机快照，' +
         '供「分析 → 战果线对比」与「战果任务 → poi EO 同步」使用。</p>' +
 

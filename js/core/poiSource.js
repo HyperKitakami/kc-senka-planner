@@ -7,9 +7,11 @@
    文件读取（File System Access API）、快照落盘由上层负责。
 
    数据来源：poi ＋ 战果插件
-     · Windows 默认路径  %APPDATA%/poi/plugin-data/poi-plugin-senka-tracker/senka-tracker.json
-       （上游原版 poi-plugin-achievement 落在 %APPDATA%/poi/achieve/achieve.json；
-        **两者字段结构一致**，格式识别只看内容不看文件名，任一份都能解析）
+     · Windows 默认路径  %APPDATA%/poi/achieve/achieve.json（原版 poi-plugin-achievement）
+       （重构版 poi-plugin-senka-tracker 落在
+        %APPDATA%/poi/plugin-data/poi-plugin-senka-tracker/senka-tracker.json；
+        **两者字段结构一致**，格式识别只看内容不看文件名，任一份都能解析。
+        ⚠️ 但面向用户的路径提示一律用**原版路径**（README 口径），重构版路径是个人环境。）
      · 格式：**扁平**，约 52 个顶层键，所有数据都在顶层（**没有 r5his 嵌套**）
 
    ── 字段模型（实测核对，勿凭命名臆测）────────────────────────────

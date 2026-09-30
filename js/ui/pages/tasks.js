@@ -263,7 +263,7 @@
   }
 
   /* ------------------------------------------- poi EO 批量同步 */
-  const POI_PATH_HINT = '%APPDATA%\\roaming\\poi\\plugin-data\\poi-plugin-senka-tracker\\senka-tracker.json';
+  const POI_PATH_HINT = '%APPDATA%\\poi\\achieve\\achieve.json';
 
   /** 「预设 EX 任务」卡片里的 poi 季常同步区 */
   function renderPoiExSlot() {
