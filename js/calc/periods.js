@@ -32,7 +32,7 @@
     { resetCycle: 'WEEKLY', label: '周常', refresh: '每周一 04:00',
       note: 'ISO 周；周一的 04:00 之后才算进入新的一周。' },
     { resetCycle: 'MONTHLY', label: '月常', refresh: '每月 1 日 04:00',
-      note: '含 EO 海域（EO 血条在末日 23:00 复活，见下一块说明）。' },
+      note: '不含 EO 海域；EO 战果走独立的战果归属边界（见下一块说明），不随月常刷新。' },
     { resetCycle: 'QUARTERLY', label: '季常', refresh: '每季度首月 1 日 04:00',
       note: '季度按 3/6/9/12 月起算（春 3-5、夏 6-8、秋 9-11、冬 12-2）。' }
   ];
