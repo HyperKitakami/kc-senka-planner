@@ -29,12 +29,15 @@
     USER: '用户自定义'
   };
 
-  /** 任务模板在当前时刻所处的周期 */
+  /**
+   * 任务模板在当前时刻所处的周期。
+   *
+   * ⚠️ EO 任务（taskGroup === 'EO'）的一轮是 **EO 归属月**（末日 21:00 切换、血条 23:00 复活），
+   * 不是它登记在模板上的「月常 1 日 04:00」—— 这个分流在 KC.periods.currentTaskPeriod 里，
+   * 本函数只是唯一的调用入口。任何"这条记录该挂哪个 periodId"的地方都要走这里。
+   */
   function periodOf(template, now) {
-    return KC.periods.taskPeriod(template.resetCycle, now, {
-      eventPeriodId: template.eventPeriodId,
-      resetMonth: template.resetMonth
-    });
+    return KC.periods.currentTaskPeriod(template, now);
   }
 
   /**
@@ -44,6 +47,9 @@
    * 避免月末/月初的边界窗口把相邻月份的任务算进本月，也避免浏览历史月份时
    * 把"今天/本周"的日常周常串进那个月。
    *
+   * ⛔ EO 例外：EO 的一轮**就是**归属月本身，直接取该月那一轮，不做 15 日锚定
+   *   （锚定会把"当月末日 23:00 之后开的那一轮"错认成上月）。
+   *
    * DAILY / WEEKLY 例外：这两种周期比"月"短，没有"该月的周期"这一说。
    *   · 当前月 → 返回真正的"本期"（今天 / 本周），列表与规划池都该按它算
    *   · 历史月 → 无意义，锚定到该月 15 日那期（保证确定性、不串味）
@@ -51,6 +57,8 @@
    * completedSenkaInMonth（按完成时刻归属，与本函数无关）。
    */
   function periodForMonth(template, monthKey, now) {
+    if (template.taskGroup === 'EO') return KC.periods.eoPeriod(monthKey);
+
     const opts = {
       eventPeriodId: template.eventPeriodId,
       resetMonth: template.resetMonth
@@ -90,10 +98,8 @@
     if (!progress || typeof progress !== 'object' || !Object.keys(progress).length) return record;
     const cycle = template.resetCycle;
     if (!cycle || cycle === 'NONE') return record;
-    const period = KC.periods.taskPeriod(cycle, now, {
-      eventPeriodId: template.eventPeriodId,
-      resetMonth: template.resetMonth
-    });
+    // 走 periodOf（内含 EO 分流）：EO 的一轮是 EO 归属月，按 resetCycle 直接算会误判"周期已过期"
+    const period = periodOf(template, now);
     return period && period.id === periodId ? record : null;
   }
 
@@ -245,8 +251,11 @@
         return cache[cycle];
       }
       // 月/季/年/活动/长期：候选 = 本月所在周期 + 上月所在周期。
-      // 上月那个是必须的——末日 13:00 之后完成的任务归本月，而它的记录
-      // 挂在上月的 periodId 上（"任务炮"），漏了它这条战果会凭空消失。
+      // 上月那个是必须的，两种原因：
+      //   · 任务炮：末日 13:00 之后完成的任务归本月，而它的记录挂在上月的 periodId 上；
+      //   · 旧版 EO 记录：EO 曾按「月常 1 日 04:00」落 periodId，这些历史记录的键
+      //     可能比归属月早一个月（末日 23:00 ～ 次月 04:00 那段）。多带一个上月候选，
+      //     新旧键都能命中，老数据不会凭空丢战果。
       const prev = U.addMonths(monthKey, -1);
       const list = [periodForMonth(template, monthKey, now), periodForMonth(template, prev, now)];
       const byId = {};

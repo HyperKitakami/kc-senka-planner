@@ -299,6 +299,54 @@
     return [2, 5, 8, 11].indexOf(Number(String(monthKey).split('-')[1])) >= 0;
   }
 
+  /* ======================================================================
+     EO 的「一轮」（EO 归属月）
+     ⛔ EO 任务虽然登记为 resetCycle = MONTHLY，但它的"一轮"是**EO 归属月**，
+        切换时刻是末日 21:00（血条 23:00 复活），与月常的「1 日 04:00」无关。
+        若按月常算，末日 21:00 ～ 次月 04:00 这 7 小时里，记录挂的周期与战果归属月
+        会各说各话（记录在旧月、战果算进次月），界面勾了却不涨战果。
+     ====================================================================== */
+
+  /**
+   * 当前时刻「正在生效的那一轮 EO」（'YYYY-MM'）。
+   *
+   * 与 eoAttributionMonthOf 的唯一差别是死区：本月末日 21:00 ～ 23:00 血条还没复活，
+   * 此刻仍在用**本月**那一轮 EO（只是已经不给战果），故回落自然月而不是 null。
+   * 用途是决定「任务页当前显示 / 写入哪一轮 EO」，**不用于战果归属**。
+   */
+  function currentEoMonth(now) {
+    now = now || new Date();
+    return eoAttributionMonthOf(now) || U.monthKeyOf(U.toDateKey(now));
+  }
+
+  /**
+   * 某一轮 EO 的周期对象（与 taskPeriod 同形：`{id, start, end}`）。
+   * 窗口即 EO 归属区间：上月末日 23:00 ～ 本月末日 21:00
+   * —— 末日 23:00 血条一复活，就进入下一轮。
+   */
+  function eoPeriod(monthKey) {
+    return {
+      id: String(monthKey),
+      start: attributionStart(monthKey, 'EO'),
+      end: attributionEnd(monthKey, 'EO')
+    };
+  }
+
+  /**
+   * 某任务模板在给定时刻所处的周期 —— EO 任务走 EO 口径，其余等价于 taskPeriod。
+   *
+   * ⛔ 凡是「这条记录该挂哪个 periodId」的地方都必须走这里，不能再按
+   * template.resetCycle 直接调 taskPeriod：那会把 EO 算成「月常（1 日 04:00）」。
+   */
+  function currentTaskPeriod(template, now) {
+    const tpl = template || {};
+    if (tpl.taskGroup === 'EO') return eoPeriod(currentEoMonth(now));
+    return taskPeriod(tpl.resetCycle, now || new Date(), {
+      eventPeriodId: tpl.eventPeriodId,
+      resetMonth: tpl.resetMonth
+    });
+  }
+
   KC.periods = {
     ATTRIBUTION_HOUR: ATTRIBUTION_HOUR,
     ATTRIBUTION_START_HOUR: ATTRIBUTION_START_HOUR,
@@ -312,6 +360,9 @@
     taskAttributionWindow: taskAttributionWindow,
     taskAttributionMonthOf: taskAttributionMonthOf,
     eoAttributionMonthOf: eoAttributionMonthOf,
+    currentEoMonth: currentEoMonth,
+    eoPeriod: eoPeriod,
+    currentTaskPeriod: currentTaskPeriod,
     isQuarterLastMonth: isQuarterLastMonth,
     elapsedDays: elapsedDays,
     remainingDays: remainingDays,

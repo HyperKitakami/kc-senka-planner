@@ -373,10 +373,9 @@
     const cycle = template && template.resetCycle;
     // 长期任务没有"周期刷新"这回事，进度一直有效
     if (!cycle || cycle === 'NONE') return record;
-    const period = KC.periods.taskPeriod(cycle, new Date(), {
-      eventPeriodId: template.eventPeriodId,
-      resetMonth: template.resetMonth
-    });
+    // 走 KC.periods.currentTaskPeriod：EO 的一轮是 EO 归属月（末日 21:00 切换），
+    // 不是登记在模板上的「月常 1 日 04:00」—— 按 resetCycle 直接算会把 EO 误判成"周期已过期"。
+    const period = KC.periods.currentTaskPeriod(template, new Date());
     return period && period.id === currentPeriodId ? record : null;
   }
 
