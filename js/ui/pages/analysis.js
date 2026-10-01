@@ -463,8 +463,9 @@
               '<em>' + (last === null ? '—' : U.formatNumber(last)) + '</em></li>';
           }).join('') + '</ul>'
         : '') +
-      '<p class="form-hint">四条战果线来自 poi（联合 / 一群 / 二群 / 三群，poi 按日累积的排名线）；' +
+      '<p class="form-hint">四条战果线来自 poi（联合 / 一群 / 二群 / 三群，poi 按半天槽累积的排名线）；' +
         '「我的累计」是本月的累计出击战果。' +
+        '横轴每个日号对应两个点（前半日 / 后半日），日期标注画在后半日那个点上。' +
         (srcNote ? U.escapeHtml(srcNote) + '。' : '') +
         '数据来自「本机轻量存储」里的 poi 快照，不参与导入导出，换浏览器或清站点数据会丢失。</p>' +
       '</div>';
@@ -534,8 +535,13 @@
           },
           tooltip: {
             callbacks: {
+              // 横轴是**半天槽**：前半日那个点没有刻度文字，
+              // 标题按槽号还原成「N 日 前半日 / 后半日」（槽模型见 calc/senkaLine）
               title: function (items) {
-                return items.length ? items[0].label + ' 日' : '';
+                if (!items.length) return '';
+                const SL = KC.calc.senkaLine;
+                const p = SL.slotParts(items[0].dataIndex);
+                return p.day + ' 日 ' + SL.SLOT_LABEL_HALF[p.half];
               },
               label: function (item) {
                 return item.dataset.label + '：' +
@@ -547,7 +553,11 @@
         scales: {
           x: {
             grid: { display: false },
-            ticks: axisTicks(textColor),
+            // ⚠️ **必须关掉 autoSkip**：横轴是 2×天数的半天槽，而 Chart.js 自动跳步固定
+            //    从下标 0 起按步长取（0,2,4…）—— 恰好全落在「前半日」那些空标注上，
+            //    结果一个日号都不显示。关掉后每个刻度都画：空标注占位、
+            //    日号正落在后半日那个点上（刻度数量与前一样，只是中间多一个空位）。
+            ticks: Object.assign(axisTicks(textColor), { autoSkip: false }),
             title: { display: true, text: '日', color: textColor }
           },
           y: {

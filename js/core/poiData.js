@@ -369,22 +369,27 @@
   /* --------------------------------------------- 战果线对比图（分析页用） */
 
   /**
-   * 组装「战果线对比」折线图的数据。
+   * 组装「战果线对比」折线图的数据（**横轴 = 半天槽**）。
    *
    * 四条线来自 poi 快照的战果线历史（联合 / 一群 / 二群 / 三群），
    * 第五条是**自己的累计出击战果**（运行时计算，不落库）。
    *
+   * ⚠️ **每天两个点**：poi 的键是 **0 基半天槽**（槽 2d−2 = 第 d 日**前半日**、
+   *    槽 2d−1 = 第 d 日**后半日**；与 `js/calc/senkaLine.js` 的「槽」同一套编号），
+   *    故整月共 `2 × 天数` 个点。`labels` 只在**后半日**槽上写日期、前半日槽留空串 ——
+   *    横轴刻度数量不增加，日期标注正好落在后半日那个点上。
+   *
    * ⚠️ 自己的累计值有**两个来源**，按「谁更可信」排序：
-   *   1. 该月快照里的 `myhis`（poi 原生的「总战果」日值）—— 权威口径
-   *   2. 本工具 DailyRecord 的当月逐日累计 —— 快照缺失时的回退
+   *   1. 该月快照里的 `myhis`（poi 原生的「总战果」）—— 权威口径，按槽逐点取
+   *   2. 本工具 DailyRecord 的当月逐日累计 —— 快照缺失时的回退；
+   *      记录只有**日**粒度，所以只落在后半日槽上（前半日槽留 null，不重复画）
    * 之所以不直接用 DailyRecord：记录页可能还没录，而快照是 poi 的原始事实。
    *
-   * ⚠️ **五条线共用一套下标**：`values[i]` 对应 `labels[i]`，而 labels = '1'…'N'，
-   * 即**下标 0 就是第 1 日**。没有采样的日子留 null（不画假值），不额外补起点。
+   * 缺槽一律留 null（不画假值；图表侧 spanGaps 会跨过断点连线）。
    *
    * @param {string} monthKeyStr 'YYYY-MM'
    * @param {Array} [dailyRecords] 该月的 DailyRecord（用于回退，可省略）
-   * @returns {{days:number, labels:string[], lines:Array, source:string}|null}
+   * @returns {{days:number, slots:number, labels:string[], lines:Array, source:string}|null}
    *   null = 该月没有 poi 快照（调用方给空态提示）
    */
   function chartData(monthKeyStr, dailyRecords) {
@@ -393,33 +398,14 @@
 
     const days = monthDays(monthKeyStr);
     const ps = KC.poiSource;
-    const ceiling = ps.unitCeiling(days);
+    const ceiling = ps.unitCeiling(days);   // = 2×天数 − 1（末日后半日槽）
 
-    // 四条战果线：按 poi 已定义的顺序（联合 / 一群 / 二群 / 三群）
-    const byDay = {};
-    const seriesMap = ps.rankLineSeries(snap.data, ceiling);
-    ps.RANK_LINES.forEach(function (def) {
-      const arr = seriesMap[def.key] || [];
-      byDay[def.key] = {};
-      arr.forEach(function (p) { byDay[def.key][p.day] = p.value; });
-    });
-
-    // 自己的累计：优先 poi 快照的 myhis，其次 DailyRecord 累计
-    //
-    // ⚠️ **下标 0 = 第 1 日**（labels 是 '1'…'31'，与另外四条线同一套下标），
-    // 所以这里**绝不能**写 `myValues[0] = 0` 去补「月初 0 起点」——
-    // 那是把第 1 日的真实值覆盖成 0。曾这么写过：2026-10 的 myhis = {1: 448}
-    // 只含第 1 日一个采样，整条「我的累计」就被抹成 0（图例显示 0）。
-    // 无采样的日子保持 null（与战果线一致，不画假值）。
+    // 自己的累计：优先 poi 快照的 myhis（按槽取），其次 DailyRecord 的当日累计
     let mySource = '';
     let myValues = null;
-    const mySeries = ps.byDayLatest(snap.data.myhis, ceiling);
-    if (mySeries.length) {
-      const map = {};
-      mySeries.forEach(function (p) { map[p.day] = p.value; });
-      myValues = daysRange(days).map(function (d) {
-        return (d in map) ? map[d] : null;
-      });
+    const mySlots = ps.slotSeries(snap.data.myhis, ceiling);
+    if (mySlots.some(function (v) { return v !== null; })) {
+      myValues = mySlots;
       mySource = 'poi';
     } else {
       const records = Array.isArray(dailyRecords) ? dailyRecords : [];
@@ -432,11 +418,16 @@
       });
       if (Object.keys(sum).length) {
         let acc = 0;
-        myValues = daysRange(days).map(function (d) {
-          if (!(d in sum)) return null;
-          acc += sum[d];
-          return KC.utils.round2(acc);
-        });
+        myValues = [];
+        for (let d = 1; d <= days; d++) {
+          myValues.push(null);                     // 前半日槽：日粒度记录填不出
+          if (d in sum) {
+            acc += sum[d];
+            myValues.push(KC.utils.round2(acc));   // 后半日槽：当日累计
+          } else {
+            myValues.push(null);                   // 断档日保持 null，不画假值
+          }
+        }
         mySource = 'records';
       }
     }
@@ -446,9 +437,7 @@
         key: def.key,
         label: def.label,
         rank: def.rank,
-        values: daysRange(days).map(function (d) {
-          return (d in byDay[def.key]) ? byDay[def.key][d] : null;
-        })
+        values: ps.slotSeries(snap.data[def.key + 'his'], ceiling)
       };
     });
 
@@ -458,18 +447,24 @@
 
     return {
       days: days,
+      slots: days * 2,
       month: String(monthKeyStr),
       syncedAt: snap.syncedAt || '',
       source: mySource,
-      labels: daysRange(days).map(function (d) { return String(d); }),
+      labels: slotLabels(days),
       lines: lines
     };
   }
 
-  /** [1, 2, …, days] */
-  function daysRange(days) {
+  /**
+   * 槽位横轴标注：长度 `2 × 天数`，**前半日槽为空串、后半日槽写日号**。
+   * 于是刻度数量不变（每天只多出一个不带文字的刻度），日期正好标在后半日点上。
+   */
+  function slotLabels(days) {
     const out = [];
-    for (let d = 1; d <= days; d++) out.push(d);
+    for (let i = 0; i < days * 2; i++) {
+      out.push((i % 2 === 1) ? String((i + 1) / 2) : '');
+    }
     return out;
   }
 

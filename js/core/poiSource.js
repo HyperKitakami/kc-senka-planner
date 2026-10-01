@@ -342,6 +342,30 @@
     return order.sort(function (a, b) { return a - b; }).map(function (d) { return map[d]; });
   }
 
+  /**
+   * 把 {dateNo: value} 展成**按槽**的数组（供「战果线对比」折线图用）。
+   *
+   * ⚠️ 槽号 = dateNo（**0 基**）：槽 2d−2 = 第 d 日**前半日**、槽 2d−1 = 第 d 日**后半日**
+   * （与 `dateNosOfDay` / 本项目 `senkaLine` 的「槽」同一套编号，
+   * 也与上游 achieve 插件的键约定一致）。所以整月共 `2 × 天数` 个点、每天两点。
+   *
+   * 缺槽留 `null`（不画假值，调用方自备 spanGaps）；上界外的键（跨月残留）直接忽略。
+   *
+   * @param {object} series {dateNo: value}
+   * @param {number} maxNo 上界（含），通常 = unitCeiling(当月天数)
+   * @returns {Array<number|null>} 长度 maxNo + 1，下标 = 槽号
+   */
+  function slotSeries(series, maxNo) {
+    const m = isObj(series) ? series : {};
+    const limit = Math.max(0, Math.floor(num(maxNo, 0)));
+    const out = [];
+    for (let i = 0; i <= limit; i++) {
+      const v = (i in m) ? num(m[i], NaN) : NaN;
+      out.push(isFinite(v) ? v : null);
+    }
+    return out;
+  }
+
   /** myhis 的当月累计总量（到有效末点） */
   function myhisTotal(myhis, maxNo) {
     const m = isObj(myhis) ? myhis : {};
@@ -667,6 +691,7 @@
     myhisDelta: myhisDelta,
     seriesTail: seriesTail,
     byDayLatest: byDayLatest,
+    slotSeries: slotSeries,
     myhisTotal: myhisTotal,
     myhisLatest: myhisLatest,
     eoStatus: eoStatus,
