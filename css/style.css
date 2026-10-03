@@ -346,10 +346,44 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 
 /* 网格项：面板卡自带背景，统计卡交给内部的 .stat-card */
-.dash-card { position: relative; min-width: 0; }
-.dash-card > .card-body { min-width: 0; }
+.dash-card {
+  position: relative;
+  min-width: 0;
+  /* 并排等高链路 ①：`.card-grid` 的 align-items: stretch 只会把「网格项」拉满行高，
+     而真正的卡片是它里面两层的 .card-body > .panel / .stat-card，
+     所以必须用 flex 把行高一路传下去。
+     ⛔ 别再改回 `height: 100%`：父级 .card-body 高度是 auto，百分比高度解析不到，
+     会退化成内容高度 —— 并排的卡片于是各高各的（这正是此前的表现）。 */
+  display: flex;
+  flex-direction: column;
+}
+.dash-card > .card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
 .dash-card > .card-body > .panel,
-.dash-card > .card-body > .stat-card { height: 100%; margin-bottom: 0; }
+.dash-card > .card-body > .stat-card { flex: 1 1 auto; margin-bottom: 0; }
+
+/* 被拉高的统计卡：内容居中，别在顶上堆一坨、底下空一片 */
+.dash-card > .card-body > .stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* 并排等高链路 ②：卡片盒子齐了，盒内多出来的高度交给能伸长的块，
+   免得矮卡底部空一大块 —— 默认布局里「最近增长趋势」就比同行的「战果日历」
+   矮一百多像素。图表区的基准高度仍是它自己的 height
+   （.chart-box 260px / .chart-box-lg 300px），只在此基础上按需伸长，
+   高度不够时也不会被反压。 */
+.dash-card > .card-body > .panel { display: flex; flex-direction: column; }
+.dash-card > .card-body > .panel > .chart-box,
+.dash-card > .card-body > .panel > .trend-chart { flex: 1 1 auto; }
+
+/* 页脚（如「最近数据摘要」的「查看全部记录」）贴到卡片底部 */
+.dash-card > .card-body > .panel > .panel-foot { margin-top: auto; }
 
 /* 尺寸控件只在编辑模式出现，平时首页保持纯展示 */
 .card-tools { display: none; }
@@ -456,6 +490,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   padding: 16px 18px;
   position: relative;
   overflow: hidden;
+}
+
+/* 其他页面把 stat-card 直接当网格项用（分析 / 记录 / 任务 / 归档 / 计划页的汇总条）：
+   它本身就是网格项，已被 .card-grid 的 align-items: stretch 拉齐，
+   这里只把被拉高后的内容居中，行为和首页的统计卡一致。 */
+.card-grid > .stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .stat-card::after {
@@ -1825,13 +1868,22 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 /* 数据分析页「月度比较」+「战果构成」并排。
    ⚠️ 这两块是页面上**唯一**的 `.dash-split` 使用者（首页早已改用 card-grid + span），
    而本规则此前一直缺失 —— 两块被当普通块级元素上下堆着，白占一屏高度。
-   窄屏由 auto-fit 自动堆叠；只给 column-gap，纵向间距仍由 .panel 自己的 margin-bottom 出，
-   这样堆叠时不会变成「18 + 18」的双倍间距。 */
+   窄屏由 auto-fit 自动堆叠。
+
+   等高：两者并排时按较高的那个拉齐。`.panel` 本身就是网格项，align-items: stretch
+   直接作用在它身上，不需要再给内部传高度（首页那套 .dash-card 链路是另一回事）。
+   盒内多出来的高度**故意**不塞给图表（首页「等高链路 ②」的 .panel 选择器不命中这里）：
+   两块并排的图表保持同一高度更整齐，差出来的几十像素留在卡片底部。
+
+   ⛔ 纵向间距仍由 `.panel` 自己的 margin-bottom 出，**别改成 `gap` + `margin-bottom: 0`**：
+   grid 的 row-gap 只管「行与行之间」，不含最后一行的下方 —— 那样写会让本块与
+   下方卡片（战果线对比）的 18px 间距凭空消失。margin-box 参与拉伸，
+   所以并排时两张卡仍然等高，只是各自底部留着这 18px。 */
 .dash-split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
   column-gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .comp-list {
