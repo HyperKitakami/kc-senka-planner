@@ -30,6 +30,23 @@
     return KC.pages.placeholder({ title: '未找到页面', desc: '该页面不存在，请从左侧导航重新选择。' });
   }
 
+  /**
+   * 页面切换过渡（docs/02_ui.md §二：主工作区展示当前页面）。
+   *
+   * #main 这个元素本身**不重建**（切换页面只是换它的子节点），所以 CSS 里那条动画
+   * 不会自己重放 —— 必须显式重启：摘掉类 → 强制一次重排 → 再加回来。
+   * 动画只在 mount 之后才开始，避免"先淡入、内容随后才出现"的两段感。
+   *
+   * ⚠️ 只动 opacity / transform（见 css 的 @keyframes page-in）：不触发重排，
+   *    因此不会干扰页面内 Chart.js 对画布尺寸的测量；也不要在 #main 内放
+   *    position: fixed 的元素（过渡那 160ms 里 transform 会成为它们的包含块）。
+   */
+  function playPageTransition(main) {
+    main.classList.remove('is-entering');
+    void main.offsetWidth;            // 强制重排，让同名动画能从头再跑一次
+    main.classList.add('is-entering');
+  }
+
   function render() {
     const id = parseHash();
     const main = document.getElementById('main');
@@ -49,6 +66,8 @@
       main.innerHTML = '<div class="panel"><h2>页面加载失败</h2><p>' +
         KC.utils.escapeHtml(err.message) + '</p></div>';
     }
+
+    playPageTransition(main);
 
     if (routeListener) routeListener(id);
   }

@@ -192,6 +192,25 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   padding: 28px 32px 64px;
 }
 
+/* 页面切换过渡：路由每次渲染 #main 时由 ui/router.js 重放一次（#main 不重建，
+   动画不会自己重跑）。只动 opacity / transform，动效刻意很短很轻 —— 数据工具不花哨。
+   ⚠️ 起始位移必须是**向上**（-6px，内容从略高处落位）：若写成向下 `translateY(6px)`，
+   内容恰好占满视口时多出的 6px 会把纵向滚动条挤出来（实测 clientWidth 1264 → 1249），
+   过渡期间与结束时会各重排一次、画面横向抖动。
+   ⚠️ 过渡期间 transform 会成为 fixed 后代的包含块 ⇒ #main 里别放 position: fixed
+   的元素（现有的 fixed 元素：侧栏、toast、弹窗遮罩，都在 #main 之外）。 */
+.main.is-entering { animation: page-in .16s ease-out both; }
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 系统偏好「减少动态效果」时不做过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .main.is-entering { animation: none; }
+}
+
 /* --------------------------------------------------------------------------
    品牌区
    -------------------------------------------------------------------------- */
