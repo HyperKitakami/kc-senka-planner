@@ -1601,6 +1601,22 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   border-color: currentColor;
 }
 
+/* 本页（战果记录）同步面板的按钮行与状态说明：按钮在左、说明跟着排。
+   ⚠️ 这里的 `.poi-panel` 只还有战果记录页在用 —— 战果任务页的两个同步区
+   已改用 `.poi-sync`（见下方「poi 同步区（任务页）」），别把两套搅在一起。 */
+.poi-panel .panel-foot {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.poi-panel .poi-status-line {
+  margin: 0;
+  font-weight: 400;
+  font-size: 12.5px;
+}
+
 /* 日历模式下有建议值、但当天还没记录的格子：数值显示为灰色占位 */
 .cal-cell.has-advice .cal-input::placeholder {
   color: var(--senka-planned);
@@ -1680,46 +1696,90 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   font-variant-numeric: tabular-nums;
 }
 
-/* 任务页的同步面板：按钮与状态说明同行，说明靠左 */
-.poi-panel .panel-foot {
-  justify-content: flex-start;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
+/* ---------------------------------------------------------------------------
+   poi 同步区（任务页）：EO 卡片与「预设 EX 任务」卡片共用的可折叠同步区。
+   结构见 tasks.js 的 poiSyncSection：折叠头（箭头 + 标题 + 状态摘要）+ 主体。
+   默认折叠、存在同步差异时由 JS 写 is-open 自动展开；折叠只是 CSS 隐藏，
+   内容始终渲染 —— 展开 / 收起不重建 DOM，回归测试也照常断言 innerHTML。
+   --------------------------------------------------------------------------- */
 
-.poi-panel .poi-status-line {
-  margin: 0;
-  font-weight: 400;
-  font-size: 12.5px;
-}
-
-/* -------------------------------------------------------------- 预设 EX 任务卡片 */
-
-/* EX 卡片内的 poi 季常同步区：与上方说明、下方表格各留一段间距 */
-#task-ex-card .poi-diff-block {
+.poi-sync {
   margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft, transparent);
 }
 
-/* 同步区里的「批量勾选」按钮行：与 EO 面板同口径（按钮在左、状态说明靠右） */
-#task-ex-card .poi-diff-block .panel-foot {
+.poi-sync-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.poi-sync-head:hover .poi-sync-title,
+.poi-sync-head:hover .poi-sync-caret { color: var(--primary-dark); }
+
+.poi-sync-head:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.poi-sync-caret {
+  flex: none;
+  font-size: 12px;
+  transition: transform .12s ease;
+}
+
+.poi-sync.is-open .poi-sync-caret { transform: rotate(90deg); }
+
+.poi-sync-title {
+  font-weight: 650;
+  color: var(--text);
+}
+
+/* 折叠头右侧的状态摘要：折叠时也能一眼看到当前同步状态 */
+.poi-sync-state {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-sync-state.is-warn { background: var(--gold-soft); color: var(--gold); }
+.poi-sync-state.is-ok { background: var(--green-soft); color: var(--green); }
+.poi-sync-state.is-info,
+.poi-sync-state.is-none { background: var(--tag-bg); color: var(--text-muted); }
+
+.poi-sync-body { display: none; padding: 0 12px 12px; }
+.poi-sync.is-open .poi-sync-body { display: block; }
+
+/* 同步区里的「批量勾选」按钮行：按钮在左、状态说明跟在后面（EO / EX 共用） */
+.poi-sync .panel-foot {
   justify-content: flex-start;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 12px;
 }
 
-#task-ex-card .poi-diff-block .poi-status-line {
+.poi-sync .poi-status-line {
   margin: 0;
   font-weight: 400;
   font-size: 12.5px;
 }
 
 /* 状态说明单独成行时（没有待勾选项）留一点上间距 */
-#task-ex-card .poi-diff-block > .poi-status-line {
-  margin-top: 8px;
-}
+.poi-sync-body > .poi-status-line { margin-top: 8px; }
+
+/* -------------------------------------------------------------- 预设 EX 任务卡片 */
 
 /* EX 卡片任务名列显示游戏内完整任务名（如「Bq2 戦果拡張任務！「Z作戦」前段作戦」），
    比 EO 的海域代号长得多 ⇒ 主动换行，并把表格的优先宽度让给它，
@@ -1735,7 +1795,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 
 /* 同步区里的 EX 完整名称同样允许换行（EO 的海域代号不会触发） */
-#task-ex-card .poi-diff-block .poi-eo-name {
+#task-ex-card .poi-sync .poi-eo-name {
   white-space: normal;
   line-height: 1.35;
 }

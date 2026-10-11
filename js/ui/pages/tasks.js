@@ -58,7 +58,13 @@
     /** 各任务当前选中的期次 id（仅 DAILY / WEEKLY 需要，见 pickedPeriod） */
     periodPick: {},
     /** 已展开进度面板的任务 id（默认全部折叠，见「任务进度」） */
-    expanded: {}
+    expanded: {},
+    /**
+     * poi 同步区（EO / 季常）的折叠状态：key ('eo'/'ex') → true 展开 / false 折叠。
+     * 未设置的 key 走自动行为（存在同步差异 → 展开，见 poiSyncOpen）；
+     * 用户手动点过以后以用户选择为准，切换归属月时整体重置。
+     */
+    poiSync: {}
   };
 
   let unsubscribe = null;
@@ -269,7 +275,7 @@
   function renderPoiExSlot() {
     const host = slot('task-ex-poi-slot');
     if (!host) return;
-    host.innerHTML = poiExPanel();
+    host.innerHTML = poiExSection();
   }
 
   /** 当前归属月的 poi EO 差异（无快照返回 null） */
@@ -311,27 +317,92 @@
     }).join('');
   }
 
+  /* ------------------------------------------------- poi 同步区（EO / EX 共用外壳） */
+
   /**
-   * poi 同步面板。
+   * 同步区当前的展开状态。
    *
-   * 位置由 renderList 控制（紧贴在 EO 卡片正上方），这里只负责内容。
+   * 自动行为：默认折叠；当前归属月存在同步差异（待勾选或反向仅提示）时自动展开。
+   * 用户手动点过折叠 / 展开后以用户选择为准（pageState.poiSync）—— 否则每次
+   * store 变化重绘（勾个任务就会触发）都会把刚收起的面板又弹开。
+   * 切换归属月时重置，回到自动行为。
+   */
+  function poiSyncOpen(key, diff) {
+    if (Object.prototype.hasOwnProperty.call(pageState.poiSync, key)) {
+      return pageState.poiSync[key];
+    }
+    return !!(diff && (diff.counts.done + diff.counts.undone) > 0);
+  }
+
+  function togglePoiSync(key) {
+    if (key !== 'eo' && key !== 'ex') return;   // 只认这两个同步区
+    const diff = key === 'eo' ? poiDiff() : poiExDiff();
+    pageState.poiSync[key] = !poiSyncOpen(key, diff);
+    renderList();
+  }
+
+  /** 折叠头右侧的状态摘要：折叠时也能一眼看到当前同步状态 */
+  function poiSyncState(diff) {
+    if (!diff) return { cls: 'is-none', text: '该月无快照' };
+    const c = diff.counts;
+    if (!c.done && !c.undone) {
+      // 快照里一条可比对的项都没有时（如 poi 侧本月没勾过季常），不显示「0 项」
+      return { cls: 'is-ok', text: '状态一致' + (diff.same.length ? ' ' + diff.same.length + ' 项' : '') };
+    }
+    const parts = [];
+    if (c.done) parts.push(c.done + ' 项待勾选');
+    if (c.undone) parts.push(c.undone + ' 项仅提示');
+    return { cls: c.done ? 'is-warn' : 'is-info', text: parts.join(' · ') };
+  }
+
+  /**
+   * poi 同步区外壳：EO 卡片与「预设 EX 任务」卡片共用同一套结构与样式
+   * （折叠头 = 箭头 + 标题 + 状态摘要，主体可折叠），差别只在 body 内容。
+   *
+   * ⚠️ 折叠只是 CSS 隐藏（.poi-sync-body 默认 display:none），内容**始终渲染**：
+   *    展开 / 收起不重建 DOM，回归测试也照常能用 innerHTML 断言面板内容。
+   *
+   * @param {string} key 'eo' | 'ex'（决定 id 与切换按钮的 data-key）
+   * @param {string} title 折叠头标题
+   * @param {string} bodyHtml 主体内容（差异列表 / 批量按钮 / 说明）
+   * @param {object|null} diff poiDiff() / poiExDiff() 的结果（null = 该月无快照）
+   */
+  function poiSyncSection(key, title, bodyHtml, diff) {
+    const open = poiSyncOpen(key, diff);
+    const state = poiSyncState(diff);
+    const id = key === 'eo' ? 'task-poi-panel' : 'task-ex-poi-sync';
+    return '<div class="poi-sync' + (open ? ' is-open' : '') + '" id="' + id + '">' +
+      '<button type="button" class="poi-sync-head" data-act="toggle-poi-sync" data-key="' + key + '"' +
+        ' aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="poi-sync-body-' + key + '">' +
+        '<span class="poi-sync-caret" aria-hidden="true">▸</span>' +
+        '<span class="poi-sync-title">' + U.escapeHtml(title) + '</span>' +
+        '<span class="poi-sync-state ' + state.cls + '">' + U.escapeHtml(state.text) + '</span>' +
+      '</button>' +
+      '<div class="poi-sync-body" id="poi-sync-body-' + key + '">' + bodyHtml + '</div>' +
+      '</div>';
+  }
+
+  /* ------------------------------------------------------- poi EO 批量同步 */
+
+  /**
+   * 「poi EO 同步」区（EO 卡片内部上方，见 renderGroup）。
    *
    * 只做**批量勾选**（poi 说完成 → 我们也勾上），不做自动取消：
    * poi 的 rankuex 只反映"当前血条在不在"，而战果归属有 21:00 边界，
    * 自动取消会把已经计入历史归属的战果抹掉。反向差异只列出来提示。
    */
-  function poiPanel() {
+  function poiEoSection() {
     const diff = poiDiff();
+    return poiSyncSection('eo', 'poi EO 同步', poiEoBody(diff), diff);
+  }
+
+  function poiEoBody(diff) {
     const month = planningMonth();
 
     if (!diff) {
-      return '<div class="panel poi-panel" id="task-poi-panel">' +
-        '<div class="panel-head"><h2>poi EO 同步</h2>' +
-          '<span class="panel-count">该月无快照</span></div>' +
-        '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
-          ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
-          U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选 EO 任务。</p>' +
-        '</div>';
+      return '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
+        ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
+        U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选 EO 任务。</p>';
     }
 
     const c = diff.counts;
@@ -364,16 +435,12 @@
             (diff.syncedAt ? ' · 快照同步于 ' + U.escapeHtml(fmtDateTime(new Date(diff.syncedAt))) : '') +
           '</span>' +
         '</div>'
-      : '<p class="form-hint">共 ' + diff.same.length + ' 项状态一致' +
+      : '<p class="poi-status-line">共 ' + diff.same.length + ' 项状态一致' +
         (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') + '。</p>';
 
-    return '<div class="panel poi-panel" id="task-poi-panel">' +
-      '<div class="panel-head"><h2>poi EO 同步</h2>' +
-        '<span class="panel-count">' + U.escapeHtml(U.monthLabel(month)) + '</span></div>' +
-      body + foot +
+    return body + foot +
       '<p class="form-hint">数据来自「本机轻量存储」里的 poi 快照，不参与导入导出；' +
-        '换浏览器或清站点数据会丢失。勾选后仍可在列表中逐项取消完成。</p>' +
-      '</div>';
+        '换浏览器或清站点数据会丢失。勾选后仍可在列表中逐项取消完成。</p>';
   }
 
   /** 批量勾选：确认 → 批量写入 → 提示 */
@@ -426,6 +493,8 @@
   /**
    * poi 季常同步区（「预设 EX 任务」卡片内）。
    *
+   * 与 EO 同步区同一套折叠外壳与样式。
+   *
    * 与 EO 面板同口径：**只正向勾选，绝不自动取消**。
    * 数据来自 poi 的 `zName` / `zcleartslist` / `extraSenkalist`，**两个来源任一成立即已完成**：
    *   · `zcleartslist[i]` = 第 i 项的**完成时刻**（`0` = 未完成）；
@@ -437,17 +506,18 @@
    * （它只用这两个字段算当月战果增量），所以清单只说明「**当前战果月内**完成过」，
    * 不覆盖本季更早的月份 —— 文案必须讲清楚，否则用户会以为"poi 说未完成 = 本季没做"。
    */
-  function poiExPanel() {
+  function poiExSection() {
     const diff = poiExDiff();
+    return poiSyncSection('ex', 'poi 季常同步', poiExBody(diff), diff);
+  }
+
+  function poiExBody(diff) {
     const month = planningMonth();
 
     if (!diff) {
-      return '<div class="poi-diff-block">' +
-        '<div class="poi-diff-head">poi 季常同步</div>' +
-        '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
-          ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
-          U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选季常任务。</p>' +
-        '</div>';
+      return '<p class="form-hint">还没有 ' + U.escapeHtml(U.monthLabel(month)) +
+        ' 的 poi 数据快照。到「战果记录」页选择 poi 数据文件（<code>' +
+        U.escapeHtml(POI_PATH_HINT) + '</code>）同步一次，再回到本页即可批量勾选季常任务。</p>';
     }
 
     const c = diff.counts;
@@ -476,9 +546,7 @@
       (diff.unknown.length ? ' · ' + diff.unknown.length + ' 项无法匹配' : '') +
       (diff.syncedAt ? ' · 快照同步于 ' + U.escapeHtml(fmtDateTime(new Date(diff.syncedAt))) : '');
 
-    return '<div class="poi-diff-block">' +
-      '<div class="poi-diff-head">poi 季常同步 · ' + U.escapeHtml(U.monthLabel(month)) + '</div>' +
-      body +
+    return body +
       (c.done
         ? '<div class="panel-foot">' +
             '<button type="button" class="btn btn-primary" data-act="poi-ex-sync">' +
@@ -492,8 +560,7 @@
         '两者任一成立即视为已完成。⚠️ poi 每个战果月会重置这两项，' +
         '所以它只反映「当前战果月内」的完成 —— 本季更早月份完成的季常不会出现在这里，' +
         '请自行核对后手动勾选。仅覆盖季常；年常（AL / 机动）poi 未提供完成标记，请在下方列表手动勾选。' +
-        '快照存于本机轻量存储，不参与导入导出。</p>' +
-      '</div>';
+        '快照存于本机轻量存储，不参与导入导出。</p>';
   }
 
   /** 批量勾选季常（EX）任务：确认 → 批量写入 → 提示 */
@@ -1038,6 +1105,11 @@
           group: 'EX', label: group.label, items: rest, scope: 'user'
         }, poolSet, month) : '');
     }
+    // EO 卡片：内部上方挂「poi EO 同步」区（与 EX 卡片内嵌的季常同步区同一样式）。
+    // 它只服务 EO 任务，所以跟着 EO 卡片走，而不是单独一张面板。
+    if (group.group === 'EO') {
+      return renderGroupCard(group, poolSet, month, poiEoSection());
+    }
     return renderGroupCard(group, poolSet, month);
   }
 
@@ -1086,7 +1158,8 @@
    *
    * 位置由 renderList 控制（紧跟 EO 卡片之后），这里只负责内容。
    * 卡片里额外挂一块 poi 季常同步区 —— 它只服务这批内置季常任务，
-   * 所以跟着卡片走，而不是像 EO 那样单独一个面板（`#task-poi-panel`）。
+   * 所以跟着卡片走；EO 的同步区同样嵌在 EO 卡片内部上方（renderGroup），
+   * 两处共用同一套折叠外壳（poiSyncSection）。
    */
   function renderExCard(items, poolSet, month) {
     const rows = sortExItems(items);
@@ -1113,7 +1186,7 @@
         '</div>' +
       '</div>' +
       '<p class="form-hint">' + U.escapeHtml(EX_CARD_HINT) + '</p>' +
-      '<div id="task-ex-poi-slot">' + poiExPanel() + '</div>' +
+      '<div id="task-ex-poi-slot">' + poiExSection() + '</div>' +
       unknownNote +
       '<div class="table-wrap"><table class="data-table task-table">' +
         '<thead><tr>' +
@@ -1129,7 +1202,7 @@
       '</div>';
   }
 
-  function renderGroupCard(group, poolSet, month) {
+  function renderGroupCard(group, poolSet, month, topHtml) {
     const done = group.items.filter(function (it) { return it.completed; }).length;
     const active = group.items.filter(function (it) { return it.template.enabled !== false; });
     const earned = U.round2(active.filter(function (it) { return it.completed; })
@@ -1149,6 +1222,7 @@
             ' data-select="0">取消全选</button>' +
         '</div>' +
       '</div>' +
+      (topHtml || '') +
       '<div class="table-wrap"><table class="data-table task-table">' +
         '<thead><tr>' +
           '<th class="cell-check">完成</th>' +
@@ -1201,6 +1275,8 @@
     // 「预设 EX 任务」卡片紧跟 EO 卡片之后（其余分组保持原顺序）。
     // groups 来自 groupItems，顺序与 GROUP_ORDER 一致（EO → EX → …），
     // 这里把 EX 提到第 2 位，同时保证它在 EO 卡片存在时**一定**紧随其后。
+    // 「poi EO 同步」区不再单独成面板，而是嵌在 EO 卡片内部上方（见 renderGroup）——
+    // 它只服务 EO 任务，跟着卡片走才不会离要勾选的那批任务太远。
     const ordered = [];
     const exGroup = groups.filter(function (g) { return g.group === 'EX'; })[0];
     groups.forEach(function (g) {
@@ -1210,14 +1286,8 @@
     });
     if (exGroup && ordered.indexOf(exGroup) < 0) ordered.push(exGroup);
 
-    // 「poi EO 同步」面板紧贴在 EO 卡片**正上方** —— 它只服务 EO 任务，
-    // 放在页顶会离要勾选的那批任务太远（EX 的同步区则嵌在 EX 卡片内部）。
-    // 没有 EO 分组时不渲染：此时没有可比对的任务，面板只剩噪音。
     host.innerHTML = toolbar +
-      ordered.map(function (g) {
-        return (g.group === 'EO' ? poiPanel() : '') +
-          renderGroup(g, view.poolSet, month);
-      }).join('');
+      ordered.map(function (g) { return renderGroup(g, view.poolSet, month); }).join('');
   }
 
   /* -------------------------------------------------------------- 交互 */
@@ -1606,6 +1676,8 @@
       handlePoiEoSync();
     } else if (act === 'poi-ex-sync') {
       handlePoiExSync();
+    } else if (act === 'toggle-poi-sync') {
+      togglePoiSync(btn.dataset.key);
     } else if (act === 'prev-month') {
       switchMonth(U.addMonths(planningMonth(), -1));
     } else if (act === 'next-month') {
@@ -1633,8 +1705,8 @@
 
   function buildShell() {
     // 外壳只建一次，之后各块按槽位分别刷新，避免勾选任务时把正在填写的表单冲掉。
-    // ⚠️ poi EO 同步面板**不在外壳里** —— 它要落在 EO 卡片正上方（见 renderList），
-    //    因此随任务列表一起渲染，断言它请读 `#task-list-slot`。
+    // ⚠️ poi 同步区**不在外壳里** —— EO 的同步区嵌在 EO 卡片内部、EX 的嵌在
+    //    「预设 EX 任务」卡片内，都随任务列表一起渲染；断言它们请读 `#task-list-slot`。
     pageState.container.innerHTML =
       pageHead() +
       '<div class="card-grid" id="task-summary"></div>' +
@@ -1645,11 +1717,13 @@
 
   /**
    * 切换「战果归属月」（补录历史周期用）。
-   * 页头里的月份文案需要一起更新，所以整页重绘；期次选择同时清空，回到各任务默认期。
+   * 页头里的月份文案需要一起更新，所以整页重绘；期次选择与 poi 同步区的
+   * 折叠状态同时清空，回到各任务默认期与自动折叠行为（新月份重新判定）。
    */
   function switchMonth(month) {
     pageState.month = month;
     pageState.periodPick = {};
+    pageState.poiSync = {};
     render();
   }
 
@@ -1675,8 +1749,8 @@
       unsubscribe = KC.store.subscribe(function (type) {
         if (type !== 'change') return;
         renderSummary();
-        // poi EO 同步面板挂在列表里（EO 卡片上方），EX 的同步区挂在
-        // 「预设 EX 任务」卡片内，两者都随 renderList 一起刷新
+        // poi 同步区挂在任务卡片里（EO 的在 EO 卡片内部，EX 的在
+        // 「预设 EX 任务」卡片内），两者都随 renderList 一起刷新
         renderList();
         if (pageState.formOpen) renderForm();
       });
@@ -1697,6 +1771,7 @@
       pageState.month = null;
       pageState.periodPick = {};
       pageState.expanded = {};
+      pageState.poiSync = {};
     }
   };
 })(window.KC = window.KC || {});
