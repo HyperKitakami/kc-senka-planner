@@ -457,15 +457,18 @@
       (data && hasAnyHis
         ? '<ul class="rank-legend">' + data.lines.map(function (l) {
             const last = lastValue(l.values);
+            // ⚠️ 与 tooltip 同精度：**整数**（formatInt）。两处都显示同一条线的「当前值」，
+            //    一个 6000.00 一个 6000 会让人怀疑是两个不同的数。
             return '<li><span class="rank-dot" style="background:' +
               rankColors()[l.key] + '"></span>' +
               U.escapeHtml(l.label) +
-              '<em>' + (last === null ? '—' : U.formatNumber(last)) + '</em></li>';
+              '<em>' + (last === null ? '—' : U.formatInt(last)) + '</em></li>';
           }).join('') + '</ul>'
         : '') +
       '<p class="form-hint">四条战果线来自 poi（联合 / 一群 / 二群 / 三群，poi 按半天槽累积的排名线）；' +
         '「我的累计」是本月的累计出击战果。' +
         '横轴每个日号对应两个点（前半日 / 后半日），日期标注画在后半日那个点上。' +
+        '悬停曲线时，每条战果线后面会附带它与「我的累计」的差值（同一槽两边都有值时才给出）。' +
         (srcNote ? U.escapeHtml(srcNote) + '。' : '') +
         '数据来自「本机轻量存储」里的 poi 快照，不参与导入导出，换浏览器或清站点数据会丢失。</p>' +
       '</div>';
@@ -478,6 +481,137 @@
       if (arr[i] !== null && arr[i] !== undefined) return arr[i];
     }
     return null;
+  }
+
+  /**
+   * 取某条线在**指定半天槽**的值；该槽没有值返回 null。
+   *
+   * ⚠️ **只认同一个槽**，不向前沿用邻近值 —— 本卡片的既定口径是
+   *    「数据缺失的槽连线断开，不伪造数值」（docs/02_ui.md §4.6.1）。
+   *    差值若拿一个别槽的值来凑，会给出一个图上并不存在的读数。
+   */
+  function valueAtSlot(values, index) {
+    const arr = Array.isArray(values) ? values : [];
+    const i = Number(index);
+    if (!isFinite(i) || i < 0 || i >= arr.length) return null;
+    const v = arr[i];
+    return (v === null || v === undefined) ? null : v;
+  }
+
+  /**
+   * 「战果线对比」tooltip 一行的内容：名称 / 数值 / 差值。
+   *
+   * 差值口径：**差值 = 该战果线 − 我的累计**，且**只认同一个半天槽**（见 valueAtSlot）——
+   *   · 正数 ⇒ 该线还在我之上，我还差这么多才追平它（**红**）；
+   *   · 负数 ⇒ 我已经超过该线（**绿**）。
+   * 文案不带括号、也不写「比我高 / 低」：正负号本身就是方向，
+   * 口径由 tooltip 脚注一句话交代（见 buildRankChart 的 footer 回调）。
+   * 只有「我的累计」这条基准线自己、以及该槽我的累计没有数据时不给差值。
+   *
+   * ⚠️ **数值与差值一律整数**（用户口径；`formatInt` = 四舍五入）：
+   *    · 差值是**两个整数相减**（各自先取整），所以「数值 − 数值 = 差值」在显示上能对上；
+   *      若改成「原始值相减再取整」，小数数据下会出现差 1 的对不上（6000.6 − 2000.4 显示 6001/2000
+   *      却写 4000）。
+   *    · 先取整再由结果定符号与颜色，避免 0.4 显示成「+0」这种自相矛盾的东西。
+   *    · 基准线（我的累计）与战果线的取整口径一致，缺值仍是「—」。
+   *
+   * @param {object} dataset 数据集（用到 label 与自加的 key）
+   * @param {number} index 半天槽号
+   * @param {number|null} value 该槽的数值
+   * @param {Array<number|null>|null} myValues 「我的累计」的逐槽值（差值的基准）
+   * @returns {{name:string, value:string, diff:({text:string,dir:number}|null)}}
+   *   diff.dir：1 正 / -1 负 / 0 持平（着色用）；diff = null 表示这一行不显示差值
+   */
+  function rankTooltipRow(dataset, index, value, myValues) {
+    const absent = (value === null || value === undefined);
+    const row = {
+      name: String(dataset ? dataset.label : ''),
+      value: absent ? '—' : U.formatInt(value),
+      diff: null
+    };
+    if (absent || !dataset || dataset.key === 'my') return row;
+
+    const mine = valueAtSlot(myValues, index);
+    if (mine === null) return row;
+
+    // 两边都先取整再相减：显示出来的三个数彼此自洽
+    const delta = Math.round(Number(value)) - Math.round(Number(mine));
+    row.diff = {
+      text: delta === 0
+        ? '0'
+        : (delta > 0 ? '+' : '-') + U.formatInt(Math.abs(delta)),
+      dir: delta === 0 ? 0 : (delta > 0 ? 1 : -1)
+    };
+    return row;
+  }
+
+  /**
+   * 「战果线对比」tooltip 的**自绘**渲染器（Chart.js 的 `external` 钩子）。
+   *
+   * 为什么不用内置的 canvas tooltip：差值那个数要**单独着色**（正红 / 负绿），
+   * 而内置 tooltip 的文字是画在 canvas 上的、**一行只能一个颜色**
+   * （`label` 回调只返回纯文本，没有富文本能力；`labelColor` 又是逐行的），
+   * 做不到「联合：6000.00  +4000.00」里只把 +4000.00 涂红。
+   * 于是自绘一个 DOM 浮层，外观复刻 Chart.js 默认样式（深色圆角块 + 色块 + 标题 + 脚注）。
+   *
+   * ⚠️ 浮层挂在 canvas 的父节点（`.chart-box`，`position: relative`）里，每次重绘整页重建
+   *    ⇒ 旧节点自然消失，这里按需新建；鼠标移开时只把 opacity 归零（留着复用）。
+   *    必须在 CSS 里 `pointer-events: none`，否则它压住鼠标、把悬停交互自己掐掉。
+   *
+   * ⚠️ 位置直接用 Chart.js 算好的 tooltip 框左上角（`tooltip.x/y`，已含贴边翻转），
+   *    不再自己按 caret 推 —— 少一套会跟 Chart.js 打架的定位逻辑。
+   *
+   * @param {{chart:object, tooltip:object}} ctx Chart.js 传进来的上下文
+   * @param {Array<number|null>|null} myValues 「我的累计」的逐槽值（差值的基准）
+   */
+  function renderRankTooltip(ctx, myValues) {
+    const canvas = ctx && ctx.chart && ctx.chart.canvas;
+    const tt = ctx && ctx.tooltip;
+    const host = canvas && canvas.parentNode;
+    if (!tt || !host || typeof host.querySelector !== 'function') return;
+
+    let el = host.querySelector('.chart-tooltip');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'chart-tooltip';
+      host.appendChild(el);
+    }
+    if (!tt.opacity) { el.style.opacity = '0'; return; }
+
+    const rows = (tt.dataPoints || []).map(function (dp) {
+      const row = rankTooltipRow(dp.dataset, dp.dataIndex, dp.parsed.y, myValues);
+      const cls = !row.diff ? '' : (row.diff.dir > 0 ? ' is-up' : (row.diff.dir < 0 ? ' is-down' : ''));
+      return '<li>' +
+        '<span class="tt-dot" style="background:' +
+          U.escapeHtml(dp.dataset.borderColor || '') + '"></span>' +
+        '<span class="tt-name">' + U.escapeHtml(row.name) + '</span>' +
+        '<span class="tt-val">' + U.escapeHtml(row.value) + '</span>' +
+        (row.diff
+          ? '<span class="tt-diff' + cls + '">' + U.escapeHtml(row.diff.text) + '</span>'
+          : '') +
+        '</li>';
+    }).join('');
+
+    const title = (tt.title && tt.title.length) ? tt.title[0] : '';
+    const foot = (tt.footer && tt.footer.length) ? tt.footer[0] : '';
+
+    el.innerHTML =
+      (title ? '<div class="chart-tooltip-title">' + U.escapeHtml(title) + '</div>' : '') +
+      '<ul class="chart-tooltip-list">' + rows + '</ul>' +
+      (foot ? '<div class="chart-tooltip-foot">' + U.escapeHtml(foot) + '</div>' : '');
+    el.style.opacity = '1';
+
+    // 位置取 Chart.js 算好的框左上角（含它自己的贴边翻转），再按**自绘框**的实际尺寸
+    // 夹一次 —— 两边的宽度算法不同（我们的行是 flex 小表、脚注还会折行），
+    // 只靠 Chart.js 的钳制在右 / 下边缘仍可能溢出卡片。
+    let left = (canvas.offsetLeft || 0) + tt.x;
+    let top = (canvas.offsetTop || 0) + tt.y;
+    const boxW = host.clientWidth || 0;
+    const boxH = host.clientHeight || 0;
+    if (boxW && el.offsetWidth) left = Math.max(0, Math.min(left, boxW - el.offsetWidth));
+    if (boxH && el.offsetHeight) top = Math.max(0, Math.min(top, boxH - el.offsetHeight));
+    el.style.left = Math.round(left) + 'px';
+    el.style.top = Math.round(top) + 'px';
   }
 
   /** ISO 时间 → 'MM-DD HH:mm'（本机时区） */
@@ -507,6 +641,8 @@
     const datasets = data.lines.map(function (l) {
       const isMine = l.key === 'my';
       return {
+        // tooltip 要用它认出「哪条是我自己」（差值以「我的累计」为基准）
+        key: l.key,
         label: l.label,
         data: l.values,
         borderColor: palette[l.key],
@@ -521,6 +657,10 @@
       };
     });
 
+    // 「我的累计」这条线的逐槽值 —— tooltip 里各战果线的差值都以它为基准
+    const myLine = data.lines.filter(function (l) { return l.key === 'my'; })[0] || null;
+    const myValues = myLine ? myLine.values : null;
+
     pageState.charts.push(new window.Chart(canvas, {
       type: 'line',
       data: { labels: data.labels, datasets: datasets },
@@ -534,6 +674,13 @@
             labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, color: textColor }
           },
           tooltip: {
+            // ⚠️ `enabled: false` 与 `external` **必须成对写**：只给 external 的话，内置 tooltip
+            //    照样会画出来 —— Chart.js 的 Tooltip.draw() 只认 `enabled`（`enabled && 有内容`
+            //    才画），`external` 只决定「update() 时回调自绘一个」而**不抑制内置绘制**
+            //    （v4 实测，别凭「external 就是不画内置」的直觉删掉这行，会出现两个浮层叠着）。
+            //    关掉 enabled 不影响 external：命中判定的门是 (enabled || external)。
+            enabled: false,
+            external: function (ctx) { renderRankTooltip(ctx, myValues); },
             callbacks: {
               // 横轴是**半天槽**：前半日那个点没有刻度文字，
               // 标题按槽号还原成「N 日 前半日 / 后半日」（槽模型见 calc/senkaLine）
@@ -543,9 +690,18 @@
                 const p = SL.slotParts(items[0].dataIndex);
                 return p.day + ' 日 ' + SL.SLOT_LABEL_HALF[p.half];
               },
+              // 纯文本形态的一行（自绘渲染器复用同一个 rankTooltipRow 组装 HTML，
+              // 文本口径只有那一处；这里返回的字符串就是它的无格式版本）
               label: function (item) {
-                return item.dataset.label + '：' +
-                  (item.parsed.y === null ? '—' : U.formatNumber(item.parsed.y));
+                const row = rankTooltipRow(item.dataset, item.dataIndex, item.parsed.y, myValues);
+                return row.name + '：' + row.value + (row.diff ? '  ' + row.diff.text : '');
+              },
+              // 口径写在脚注里，免得每行都重复一遍；没有「我的累计」线时不出现。
+              // ⚠️ 这句脚注同时**决定浮层的宽度**（行是 max-content 紧凑排的，宽度由最宽的一行
+              //    / 这句脚注撑出）—— 写长了会在右侧留一大片空白，所以只留「差值怎么算」，
+              //    「同一槽两边都有值时才给出」这条细节交给卡片下方的说明文字。
+              footer: function () {
+                return myValues ? '差值 = 战果线 − 我的累计' : '';
               }
             }
           }

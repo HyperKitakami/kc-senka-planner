@@ -66,6 +66,14 @@
   --chart-fill: rgba(47, 111, 237, .10);
   --toast-bg: #232a35;
   --toast-text: #ffffff;
+  /* 图表 tooltip：与 toast 一样是**深色浮层**（两个主题都保持深色），所以正负差值
+     不能直接用 --danger / --green —— 那两个是给浅底色准备的，落在深底上对比度不足。
+     这里按「正 = 红、负 = 绿」取一对专供深底的颜色（样式见「数据分析页」的 .chart-tooltip）。 */
+  --chart-tooltip-bg: #232a35;
+  --chart-tooltip-text: #ffffff;
+  --chart-tooltip-muted: rgba(255, 255, 255, .66);
+  --chart-diff-up: #ff9a94;
+  --chart-diff-down: #6fdca6;
   --backdrop: rgba(23, 32, 48, .38);
   --alert-error-border: #f3c9c9;
   --alert-error-text: #9d2b2b;
@@ -130,6 +138,7 @@
   --tag-bg: #262d38;
   --chart-fill: rgba(76, 134, 240, .16);
   --toast-bg: #2f3742;
+  --chart-tooltip-bg: #2f3742;
   --backdrop: rgba(0, 0, 0, .58);
   --alert-error-border: #5c3030;
   --alert-error-text: #f0a5a5;
@@ -1851,6 +1860,79 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .chart-box-lg { height: 300px; }
 
 .chart-box canvas { display: block; width: 100% !important; }
+
+/* --------------------------------------------------------------------------
+   自绘图表 tooltip（js/ui/pages/analysis.js 的 renderRankTooltip，走 Chart.js 的
+   `external` 钩子）。只有「战果线对比」用它 —— 因为差值那个数要**单独着色**，
+   而内置 tooltip 的文字画在 canvas 上、一行只能一个颜色。
+
+   ⚠️ 必须 pointer-events: none：它就压在图表上方，可点会把悬停交互自己挡掉。
+   ⚠️ 定位由 JS 每帧写 left / top（Chart.js 算好的 tooltip 框左上角），这里不要给
+      transform，否则会和 JS 的坐标打架。
+   ⚠️ 差值色用 --chart-diff-*（专供深底），**不要**换成 --danger / --green。
+   -------------------------------------------------------------------------- */
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--chart-tooltip-bg);
+  color: var(--chart-tooltip-text);
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+}
+
+.chart-tooltip-title { font-weight: 700; }
+
+/* 各行共用**同一组列**：色块 / 名称 / 数值 / 差值。
+   ⚠️ 必须是整张表一把尺（网格在容器上、`li` 用 display: contents），不能各行一个 flex ——
+      「我的累计」那一行没有差值格，flex 下它比别的行窄，被拉满后数值会被顶到**差值列**去
+      （与其余战果线的数值不对齐，2026-10-11 用户报过）。
+   ⚠️ 列宽一律 max-content：留白只会落在**行尾**，不会挤在名称与数值中间；
+      给数值列写 min-width（原来 62px）反而会在名称和数值之间撑出一道空档。 */
+.chart-tooltip-list {
+  display: grid;
+  grid-template-columns: 8px max-content max-content max-content;
+  column-gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chart-tooltip-list li { display: contents; }
+
+.chart-tooltip-list .tt-dot {
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.chart-tooltip-list .tt-name,
+.chart-tooltip-list .tt-val,
+.chart-tooltip-list .tt-diff { white-space: nowrap; }
+
+.chart-tooltip-list .tt-val,
+.chart-tooltip-list .tt-diff {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 差值：正 = 红、负 = 绿（该线在我之上 / 已在我之下），0 保持普通色 */
+.chart-tooltip-list .tt-diff.is-up { color: var(--chart-diff-up); }
+.chart-tooltip-list .tt-diff.is-down { color: var(--chart-diff-down); }
+
+.chart-tooltip-foot {
+  margin-top: 4px;
+  color: var(--chart-tooltip-muted);
+  font-size: 11.5px;
+  white-space: normal;
+}
 
 .chart-fallback {
   display: grid;
