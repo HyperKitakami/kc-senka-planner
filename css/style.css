@@ -1829,6 +1829,30 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 
 /* --------------------------------------------------------------------------
+   战果任务卡片底部：可获得战果剩余总计
+   -------------------------------------------------------------------------- */
+
+.task-remain {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.task-remain-label { font-size: 13px; color: var(--text-muted); }
+
+.task-remain-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.task-remain-note { font-size: 12px; color: var(--text-faint); }
+
+/* --------------------------------------------------------------------------
    数据管理页
    -------------------------------------------------------------------------- */
 

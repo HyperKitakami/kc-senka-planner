@@ -376,6 +376,110 @@
     return { eo: U.round2(eo), task: U.round2(task) };
   }
 
+  /**
+   * 某个战果归属月内、**此刻之后还能获得**的任务战果合计。
+   *
+   * 与 `completedSenkaInMonth` 互补：那个算「已经拿到多少」，这个算「还能再拿多少」。
+   *
+   * 口径：
+   *   · 月常 / 季常 / 年常 / 活动 / 长期：一轮只会完成一次。未完成且该月的任务战果
+   *     归属截止（末日 13:00）还没到 ⇒ 计一次；EO 走自己的末日 21:00 截止。
+   *   · 日常 / 周常：一个战果月里有**多个**周期，不能只算一次，也不能把整月所有期次
+   *     都算进去 —— 只计「尚未结束、尚未完成」的期次：
+   *       - 已结束的期次错过了就没了（0）；
+   *       - 已完成的期次已经计入已获得（0）；
+   *       - 已过本月任务战果归属截止后，新完成都归次月，剩余为 0。
+   *   · 停用任务不计；`forceAttributionMonth` 只改归属月，不改变「这一期已经完成」这个事实。
+   *
+   * ⚠️ 不能拿任务页当前选中期次的 `completed` 来推断整张卡片：日常 / 周常的选中期次
+   * 只是其中一期，用它判「完成」会把同一任务的其它期次漏算。
+   *
+   * @param {Array} templates 任务模板（内部跳过停用任务）
+   * @param {Array} records TaskRecord
+   * @param {string} monthKey 战果归属月 'YYYY-MM'
+   * @param {Date} [now]
+   * @returns {{total:number, items:Array, dailyOccurrences:number, weeklyOccurrences:number}}
+   *   items 每项 = { template, count, senka }（count = 剩余可完成次数）
+   */
+  function remainingSenkaInMonth(templates, records, monthKey, now) {
+    now = now || new Date();
+    records = records || [];
+    const nowTime = now.getTime();
+    const taskCutoff = KC.periods.attributionEnd(monthKey, 'TASK').getTime();
+    const eoCutoff = KC.periods.attributionEnd(monthKey, 'EO').getTime();
+    const periodCache = {};
+    const items = [];
+    let total = 0;
+    let dailyOccurrences = 0;
+    let weeklyOccurrences = 0;
+
+    function periodsOf(cycle) {
+      if (!periodCache[cycle]) {
+        periodCache[cycle] = periodsInAttributionWindow(cycle, monthKey);
+      }
+      return periodCache[cycle];
+    }
+
+    (templates || []).forEach(function (template) {
+      if (!template || template.enabled === false) return;
+      const value = Number(template.senkaValue) || 0;
+      if (!value) return;
+
+      const cycle = template.resetCycle;
+      let count = 0;
+
+      if (cycle === 'DAILY' || cycle === 'WEEKLY') {
+        // 已过该月的任务战果归属截止 ⇒ 任何新完成都归次月，本月没有剩余
+        if (nowTime < taskCutoff) {
+          periodsOf(cycle).forEach(function (period) {
+            if (!period || !period.start || !period.end) return;
+            if (period.end.getTime() <= nowTime) return;          // 已结束的期次错过就没了
+            if (period.start.getTime() >= taskCutoff) return;     // 起算已过截止 ⇒ 归次月
+            const record = findRecord(records, template.id, period.id);
+            if (record && record.completed) return;               // 已完成的期次不再计入
+            count++;
+          });
+        }
+      } else {
+        const cutoff = template.taskGroup === 'EO' ? eoCutoff : taskCutoff;
+        if (nowTime < cutoff) {
+          const period = periodForMonth(template, monthKey, now);
+          let done = false;
+          if (period && period.id) {
+            const record = findRecord(records, template.id, period.id);
+            done = !!(record && record.completed);
+          }
+          // EO 的旧记录可能挂在「上个月」的 periodId 上（旧版按 1 日 04:00 算月常周期，
+          // 末日 23:00 之后完成的那笔会落到上个月）。这些记录仍然算本月 EO，
+          // 因此本月也不能再有剩余 —— 与 completedSenkaInMonth 的「上月候选」同一口径。
+          if (!done && template.taskGroup === 'EO') {
+            const prevPeriod = periodForMonth(template, U.addMonths(monthKey, -1), now);
+            if (prevPeriod && prevPeriod.id && (!period || prevPeriod.id !== period.id)) {
+              const prevRecord = findRecord(records, template.id, prevPeriod.id);
+              done = !!(prevRecord && prevRecord.completed &&
+                periodAttributionMonth(prevRecord, prevPeriod, template) === monthKey);
+            }
+          }
+          if (!done) count = 1;
+        }
+      }
+
+      if (!count) return;
+      const senka = U.round2(value * count);
+      total += senka;
+      if (cycle === 'DAILY') dailyOccurrences += count;
+      if (cycle === 'WEEKLY') weeklyOccurrences += count;
+      items.push({ template: template, count: count, senka: senka });
+    });
+
+    return {
+      total: U.round2(total),
+      items: items,
+      dailyOccurrences: dailyOccurrences,
+      weeklyOccurrences: weeklyOccurrences
+    };
+  }
+
   /** 同 summarize，但把任务周期锚定到指定月份 */
   function summarizeForMonth(templates, records, monthKey, now) {
     now = now || new Date();
@@ -469,6 +573,7 @@
     attributionNotice: attributionNotice,
     periodsInAttributionWindow: periodsInAttributionWindow,
     completedSenkaInMonth: completedSenkaInMonth,
+    remainingSenkaInMonth: remainingSenkaInMonth,
     findRecord: findRecord,
     readRecord: readRecord,
     isCompleted: isCompleted,

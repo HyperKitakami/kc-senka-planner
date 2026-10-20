@@ -1154,6 +1154,61 @@
   }
 
   /**
+   * 卡片底部「可获得战果剩余总计」。
+   *
+   * 只统计**这个战果归属月内、此刻之后还能拿到**的任务战果：
+   *   · 月常 / 季常 / 年常 / 活动 / 长期：未完成且未过归属截止 ⇒ 计一次；
+   *   · 日常 / 周常：一个战果月内有多个周期，按「剩余可完成期数」累计，
+   *     已结束或已完成的期次不计（详见 calc/tasks.remainingSenkaInMonth）。
+   *
+   * ⚠️ 不能复用行上的 `completed`（那是**当前选中期次**的状态）：日常 / 周常
+   * 只选了一期，用它判整张卡片会把同一任务的其它期次漏算。
+   */
+  function remainFoot(items, month) {
+    const now = new Date();
+    const res = KC.calc.tasks.remainingSenkaInMonth(
+      items.map(function (it) { return it.template; }),
+      KC.store.state.taskRecords,
+      month,
+      now
+    );
+
+    // EO 卡片与其它卡片是两套截止时刻：EO 与出击同为末日 21:00，其余任务为末日 13:00。
+    // 卡片的行是按 taskGroup 分组的，所以 EO 卡里只会有 EO 任务。
+    const isEoCard = items.length > 0 && items.every(function (it) {
+      return it.template.taskGroup === 'EO';
+    });
+    const closed = now.getTime() >=
+      KC.periods.attributionEnd(month, isEoCard ? 'EO' : 'TASK').getTime();
+    let note;
+    let tip;
+    if (closed) {
+      note = isEoCard ? '该月 EO 战果结算已截止' : '该月任务战果归属已截止';
+      tip = isEoCard
+        ? 'EO 战果与出击同为 ' + U.monthLabel(month) + ' 末日 21:00 结算，' +
+          '此后完成的不计入该月。'
+        : '任务战果的归属截止时刻为 ' + U.monthLabel(month) + ' 末日 13:00，' +
+          '此后完成的任务战果不再计入该月。';
+    } else if (res.dailyOccurrences || res.weeklyOccurrences) {
+      const parts = [];
+      if (res.dailyOccurrences) parts.push('日常 ' + res.dailyOccurrences + ' 次');
+      if (res.weeklyOccurrences) parts.push('周常 ' + res.weeklyOccurrences + ' 次');
+      note = '含 ' + parts.join(' · ') + '（只计还能完成的期次）';
+      tip = '日常 / 周常在一个战果月内会刷新多次，这里按「本月还能完成」的期数累计；' +
+        '已经结束或已经完成的期次不计入。';
+    } else {
+      note = '未完成任务的战果合计';
+      tip = '只统计该月尚未完成、且仍能获得的任务战果。';
+    }
+
+    return '<div class="task-remain" title="' + U.escapeHtml(tip) + '">' +
+      '<span class="task-remain-label">可获得战果剩余总计</span>' +
+      '<strong class="task-remain-value">' + U.formatNumber(res.total) + '</strong>' +
+      '<span class="task-remain-note">' + U.escapeHtml(note) + '</span>' +
+      '</div>';
+  }
+
+  /**
    * 「预设 EX 任务」卡片。
    *
    * 位置由 renderList 控制（紧跟 EO 卡片之后），这里只负责内容。
@@ -1199,6 +1254,7 @@
         '</tr></thead>' +
         '<tbody>' + rows.map(function (it) { return renderRow(it, poolSet, month); }).join('') + '</tbody>' +
       '</table></div>' +
+      remainFoot(rows, month) +
       '</div>';
   }
 
@@ -1234,6 +1290,7 @@
         '</tr></thead>' +
         '<tbody>' + group.items.map(function (it) { return renderRow(it, poolSet, month); }).join('') + '</tbody>' +
       '</table></div>' +
+      remainFoot(group.items, month) +
       '</div>';
   }
 
