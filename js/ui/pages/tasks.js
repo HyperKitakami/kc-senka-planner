@@ -257,14 +257,16 @@
     );
     const view = listViews(month);
 
+    // 本页所有战果数值一律**整数**展示（U.formatInt = 四舍五入）：
+    // 计算层仍按 2 位小数累加，只在渲染时取整，避免出现「1425.00」这种小数尾巴。
     host.innerHTML =
-      statCard('已完成 EO 战果', U.formatNumber(ov.eoCompleted),
+      statCard('已完成 EO 战果', U.formatInt(ov.eoCompleted),
         '战果归属月 ' + U.monthLabel(month), 'gold') +
-      statCard('已完成任务战果', U.formatNumber(ov.taskCompleted),
+      statCard('已完成任务战果', U.formatInt(ov.taskCompleted),
         'EX / 活动 / 自定义', 'green') +
-      statCard('已完成合计', U.formatNumber(ov.totalCompleted),
+      statCard('已完成合计', U.formatInt(ov.totalCompleted),
         '共 ' + view.done + ' / ' + view.active.length + ' 项已完成', 'purple') +
-      statCard('规划池待完成', U.formatNumber(view.pendingSenka),
+      statCard('规划池待完成', U.formatInt(view.pendingSenka),
         view.pending.length + ' 项待完成', '');
   }
 
@@ -313,7 +315,7 @@
       return '<li><span class="poi-chip-badge">' + mark + '</span>' +
         '<span class="poi-eo-name"' + (tip ? ' title="' + U.escapeHtml(tip) + '"' : '') + '>' +
         U.escapeHtml(label) + '</span>' +
-        '<span class="poi-eo-senka">' + U.formatNumber(r.senka) + '</span></li>';
+        '<span class="poi-eo-senka">' + U.formatInt(r.senka) + '</span></li>';
     }).join('');
   }
 
@@ -451,13 +453,13 @@
     const month = planningMonth();
     const total = U.round2(diff.done.reduce(function (s, r) { return s + r.senka; }, 0));
     const preview = diff.done.slice(0, 8).map(function (r) {
-      return '  · ' + r.code + '  ' + U.formatNumber(r.senka);
+      return '  · ' + r.code + '  ' + U.formatInt(r.senka);
     }).join('\n');
 
     const ok = await KC.confirmDialog({
       title: '批量勾选 EO 任务',
       message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项 EO 任务标记为已完成' +
-        '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
+        '（合计 ' + U.formatInt(total) + '）：\n' + preview +
         (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
         '\n\n依据是 poi 的「未完成海域」列表。已有进度节点的任务会保留其进度；' +
         '勾选后仍可逐项取消完成。',
@@ -571,13 +573,13 @@
     const month = planningMonth();
     const total = U.round2(diff.done.reduce(function (s, r) { return s + r.senka; }, 0));
     const preview = diff.done.slice(0, 8).map(function (r) {
-      return '  · ' + (r.fullName || r.name) + '  ' + U.formatNumber(r.senka);
+      return '  · ' + (r.fullName || r.name) + '  ' + U.formatInt(r.senka);
     }).join('\n');
 
     const ok = await KC.confirmDialog({
       title: '批量勾选季常任务',
       message: '将把 ' + month + ' 的 ' + diff.done.length + ' 项季常任务标记为已完成' +
-        '（合计 ' + U.formatNumber(total) + '）：\n' + preview +
+        '（合计 ' + U.formatInt(total) + '）：\n' + preview +
         (diff.done.length > 8 ? '\n  · …等 ' + diff.done.length + ' 项' : '') +
         '\n\n依据是 poi 的季常任务清单（zcleartslist 记录每项的完成时刻，' +
         'extraSenkalist 的三态标记 2 = 已完成，由 poi 对账游戏任务列表写入；' +
@@ -1072,7 +1074,7 @@
     const main = '<tr class="' + cls + '">' +
       check +
       nameCell(item, month) +
-      '<td class="col-senka">' + U.formatNumber(t.senkaValue) + '</td>' +
+      '<td class="col-senka">' + U.formatInt(t.senkaValue) + '</td>' +
       periodCell(item, month) +
       '<td class="cell-check">' +
         '<input type="checkbox" data-act="plan" data-id="' + U.escapeHtml(t.id) + '"' +
@@ -1203,7 +1205,9 @@
 
     return '<div class="task-remain" title="' + U.escapeHtml(tip) + '">' +
       '<span class="task-remain-label">可获得战果剩余总计</span>' +
-      '<strong class="task-remain-value">' + U.formatNumber(res.total) + '</strong>' +
+      // 展示口径：**整数**（formatInt = 四舍五入）。计算层仍按 2 位小数累加，
+      // 只在显示时取整，避免卡片底部出现「204.80」这类不可读的小数。
+      '<strong class="task-remain-value">' + U.formatInt(res.total) + '</strong>' +
       '<span class="task-remain-note">' + U.escapeHtml(note) + '</span>' +
       '</div>';
   }
@@ -1233,7 +1237,7 @@
         '<h2>' + U.escapeHtml(EX_CARD_TITLE) + '</h2>' +
         '<div class="panel-tools">' +
           '<span class="panel-count">已完成 ' + done + ' / ' + rows.length +
-            ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
+            ' · 已获得 ' + U.formatInt(earned) + '</span>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX"' +
             scopeAttr('system') + ' data-select="1">全选规划</button>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="EX"' +
@@ -1269,7 +1273,7 @@
         '<h2>' + U.escapeHtml(group.label) + '</h2>' +
         '<div class="panel-tools">' +
           '<span class="panel-count">已完成 ' + done + ' / ' + group.items.length +
-            ' · 已获得 ' + U.formatNumber(earned) + '</span>' +
+            ' · 已获得 ' + U.formatInt(earned) + '</span>' +
           '<button type="button" class="btn btn-ghost btn-sm" data-act="group-plan" data-group="' +
             U.escapeHtml(group.group) + '"' + scopeAttr(group.scope) +
             ' data-select="1">全选规划</button>' +
@@ -1319,7 +1323,7 @@
       '<div class="pool-bar">' +
         '<span>战果归属月：<strong>' + U.escapeHtml(U.monthLabel(month)) + '</strong>' +
           '<span class="muted"> · 规划池待完成 ' + view.pending.length + ' 项 / ' +
-            U.formatNumber(view.pendingSenka) + ' 战果</span></span>' +
+            U.formatInt(view.pendingSenka) + ' 战果</span></span>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="clear-pool">清空规划池</button>' +
       '</div>';
 
@@ -1481,7 +1485,7 @@
         KC.toast('已取消强制计入：' + template.name + back, 'ok');
       } else {
         KC.toast('已强制计入 ' + U.monthLabel(month) + '：' + template.name +
-          '（' + U.formatNumber(template.senkaValue) + '）', 'ok');
+          '（' + U.formatInt(template.senkaValue) + '）', 'ok');
       }
     } catch (err) {
       KC.toast(err.message, 'error');
