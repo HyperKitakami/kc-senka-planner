@@ -19,10 +19,6 @@
 > 以 [`docs/00_project.md`](docs/00_project.md) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准，
 > 本文件不重复描述。
 
-## 文档
-
-- 未经确认，不修改 `docs/` 中的文档。
-
 ## 完成任务
 
 - 运行全量回归测试。
