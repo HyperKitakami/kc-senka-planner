@@ -119,7 +119,7 @@ js/calc/   stats            月度统计
            plan             规划：实际 / 规划战果、所需日均、预测
            analysis         逐日序列、月度比较、战果构成
            periods          周期查询：任务刷新 / 战果结算两套边界的剩余时间
-           senkaLine        战果线槽位推导与取值（当前槽 / 同槽取值 / 月末值）
+           senkaLine        战果线槽位推导与取值（当前槽 / 对齐取值 / 月末值）
 js/ui/     dom / feedback    DOM 辅助、Toast 与确认弹窗
            export           导出与下载
            nav / router      导航与 hash 路由

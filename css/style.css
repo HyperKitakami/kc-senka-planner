@@ -351,6 +351,21 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .panel-head h2 { font-size: 15px; }
 .panel-count { font-size: 12px; color: var(--text-faint); }
 
+/**
+ * 标题 + 行内切换（首页「战果线往期对比」的对齐方式）。
+ * 标题与切换共同构成左半边，右侧仍是 .panel-count；
+ * 卡片被缩到很窄时允许换行，避免计数被挤成竖排。
+ */
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.panel-head.is-wrap { flex-wrap: wrap; }
+
 .muted { color: var(--text-faint); }
 
 /* --------------------------------------------------------------------------
@@ -1195,6 +1210,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   color: var(--primary-dark);
   font-weight: 600;
   box-shadow: var(--shadow-sm);
+}
+
+/* 紧凑版：放在面板标题旁（首页卡片内），比页头那组小一号 */
+.segmented.is-compact { padding: 2px; border-radius: 7px; }
+
+.segmented.is-compact button {
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 12px;
 }
 
 .progress-track {

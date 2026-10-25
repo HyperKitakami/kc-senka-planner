@@ -30,7 +30,12 @@
   const SUMMARY_DAYS = 7;
   const RECENT_LIST = 5;
 
-  const pageState = { container: null, editing: false, dragId: null };
+  const pageState = { container: null, editing: false, dragId: null,
+    /**
+     * 静默计数：>0 时忽略 store 的 change 事件（不整页重绘）。
+     * 仅用于「只想刷新一张卡片」的局部更新 —— 见 setSenkaAlignMode。
+     */
+    quiet: 0 };
 
   let unsubscribe = null;
   let handlers = null;
@@ -364,6 +369,43 @@
   /* ------------------------------------------------ 战果线往期对比卡片 */
 
   /**
+   * 往期对比的对齐方式（卡片标题旁的切换，存 Settings.senkaLineMode）。
+   *
+   * 两种口径**只影响对齐到哪个槽**，「涨幅 = 该月月末值 − 对齐值」的算法不变：
+   *   · slot      同进度点：与当前相同的槽号（同一天、同一时段）；
+   *   · remaining 距月末同天数：从该月月末往回数同样的剩余槽数，
+   *               对齐的是「离结算还剩多久」，月份长度不同时日期会不同。
+   */
+  const SENKA_ALIGN_OPTIONS = [
+    { key: 'slot', label: '同进度点',
+      title: '对齐到与当前相同的进度点（同一天、同一时段）' },
+    { key: 'remaining', label: '距月末同天数',
+      title: '从各月月末往回数，对齐到与本月剩余天数相同的采样点' }
+  ];
+
+  /** 半天精度的天数文案：12 槽 → '6'，11 槽 → '5.5' */
+  function halfDayText(days) {
+    const n = Number(days);
+    if (!isFinite(n)) return '—';
+    return Math.round(n) === n ? String(Math.round(n)) : n.toFixed(1);
+  }
+
+  /** 对齐方式切换按钮组（紧凑版 segmented） */
+  function senkaAlignSwitch(mode) {
+    const cur = KC.calc.senkaLine.normalizeAlign(mode);
+    return '<div class="segmented is-compact" role="group" aria-label="对齐方式">' +
+      SENKA_ALIGN_OPTIONS.map(function (o) {
+        const on = o.key === cur;
+        return '<button type="button"' + (on ? ' class="active"' : '') +
+          ' data-act="senka-mode" data-mode="' + o.key + '"' +
+          ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
+          ' title="' + U.escapeHtml(o.title) + '">' +
+          U.escapeHtml(o.label) + '</button>';
+      }).join('') +
+      '</div>';
+  }
+
+  /**
    * 战果线往期对比（docs/02_ui.md §4.1 / §4.6.2）。
    *
    * 数据来自 wiki「時系列各順位戦果値」页，由用户在本机采集（docs/03_data.md §9.2）。
@@ -371,17 +413,25 @@
    *    与本站的 500 位口径混在同一条对比线上不干净。poi 只负责「当月实时值」
    *    这类 wiki 给不了的数据。
    *
-   * 每格展示「同槽值 → 月末值 +涨幅」：
-   *   · 同槽值 = 往月「与现在同一进度点」到哪了，用来判断今年这个月是松是紧；
+   * 每格展示「对齐值 → 月末值 +涨幅」：
+   *   · 对齐值 = 往月「与现在同一进度点」或「距月末剩余相同」时到哪了，
+   *     用来判断今年这个月是松是紧；口径由标题旁的切换决定；
    *   · 月末值 = 那个月最终到哪了；
    *   · 两者之差就是**从现在到月末还会涨多少**的参照。
    *
    * 无数据时给引导、绝不给空表（与「战果线对比」卡片同一约定）。
    */
   function senkaLinePanel(model) {
-    function head(count) {
-      return '<div class="panel-head"><h2>战果线往期对比</h2>' +
-        '<span class="panel-count">' + U.escapeHtml(count) + '</span></div>';
+    const isRemaining = model.mode === 'remaining';
+
+    function head(count, withSwitch) {
+      return '<div class="panel-head is-wrap">' +
+        '<div class="panel-title">' +
+          '<h2>战果线往期对比</h2>' +
+          (withSwitch ? senkaAlignSwitch(model.mode) : '') +
+        '</div>' +
+        '<span class="panel-count">' + U.escapeHtml(count) + '</span>' +
+        '</div>';
     }
     /**
      * 无数据时的引导行。
@@ -389,7 +439,7 @@
      * （战果线数据面板 2026-10-25 从设置页迁到了数据管理页）。
      */
     function guide(text, label, act) {
-      return '<div class="panel">' + head('需要先准备数据') +
+      return '<div class="panel">' + head('需要先准备数据', false) +
         '<div class="empty-inline">' + U.escapeHtml(text) +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="' +
         U.escapeHtml(act || 'goto-settings') + '">' +
@@ -417,21 +467,31 @@
         '<span class="rl-sub">' + U.escapeHtml(m.sameLabel || '—') + '</span></th>';
     }).join('');
 
+    // 对齐点没取到精确槽时的角标：两种口径的成因不同，提示必须分开写
+    const fellTitle = isRemaining
+      ? '该月数据没覆盖到对齐槽，取的是更早的一槽'
+      : '该月没有这个进度点（月份较短），取的是月末值';
+    const shortTitle = '该月比本月短，按「距月末同天数」对不齐，只给月末值';
+
     const body = KC.senkaLineSource.RANKS.map(function (rank) {
       const cells = model.months.map(function (m) {
         const sv = m.same ? m.same.row[rank.key] : null;
         const ev = m.end ? m.end.row[rank.key] : null;
         if (sv === null && ev === null) return '<td class="num">—</td>';
 
-        const delta = (sv !== null && ev !== null) ? ev - sv : 0;
-        // same.exact=false 说明该月没有这个进度点（月份较短），取到的是月末值
+        const delta = (sv !== null && ev !== null) ? ev - sv : null;
         const fell = !!(m.same && !m.same.exact);
         return '<td class="num">' +
           '<span class="rl-same">' + U.formatInt(sv) + '</span>' +
           '<span class="rl-arrow" aria-hidden="true">→</span>' +
           '<span class="rl-end">' + U.formatInt(ev) + '</span>' +
-          (delta > 0 ? '<span class="rl-delta">+' + U.formatInt(delta) + '</span>' : '') +
-          (fell ? '<span class="chip-flag" title="该月没有这个进度点（月份较短），取的是月末值">末</span>' : '') +
+          (delta !== null && delta > 0 ? '<span class="rl-delta">+' + U.formatInt(delta) + '</span>' : '') +
+          (m.unreachable
+            ? '<span class="chip-flag" title="' + U.escapeHtml(shortTitle) + '">短</span>'
+            : (fell
+              ? '<span class="chip-flag" title="' + U.escapeHtml(fellTitle) + '">' +
+                (isRemaining ? '早' : '末') + '</span>'
+              : '')) +
           '</td>';
       }).join('');
       return '<tr><th scope="row" title="' + U.escapeHtml(rank.label + ' ／ ' + rank.tier) + '">' +
@@ -453,19 +513,22 @@
       notes.push('不足 3 个月，先列出已采集的');
     }
 
+    const alignText = isRemaining
+      ? '距月末剩 ' + halfDayText(model.current.remainingDays) + ' 天'
+      : '对齐 ' + model.current.label;
+
     return '<div class="panel">' +
-      '<div class="panel-head">' +
-        '<h2>战果线往期对比</h2>' +
-        '<span class="panel-count">' + U.escapeHtml(model.serverName) +
-          ' · 对齐 ' + U.escapeHtml(model.current.label) + '</span>' +
-      '</div>' +
+      head(model.serverName + ' · ' + alignText, true) +
       '<div class="table-wrap"><table class="data-table is-rankline">' +
         '<thead><tr><th>位次</th>' + cols + '</tr></thead>' +
         '<tbody>' + body + '</tbody>' +
       '</table></div>' +
+      (isRemaining ? '<div class="panel-desc">「距月末同天数」从各月月末往回数，' +
+        '取与本月剩余天数相同的采样点；月份长度不同时，对齐到的日期也不同（见各列表头）。</div>' : '') +
       (notes.length ? '<div class="panel-desc">' + U.escapeHtml(notes.join('；')) + '。</div>' : '') +
       '<div class="panel-foot">' +
-        '<span class="rl-legend">每格：同槽值 → 该月月末值 +涨幅</span>' +
+        '<span class="rl-legend">每格：' +
+          (isRemaining ? '距月末同期值' : '同槽值') + ' → 该月月末值 +涨幅</span>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-data">' +
           '采集 / 管理数据</button>' +
       '</div>' +
@@ -782,6 +845,17 @@
     const host = pageState.container;
     if (!host) return;
 
+    /**
+     * 记住阅读位置再重绘（首屏挂载时为 null，不干预）。
+     *
+     * 整页重绘是 `host.innerHTML = …`：卡片网格的 `--dash-cols` 写在**网格元素自己**身上，
+     * 重建后到 applyCardLayout 写回之前会落回 CSS 兜底的 4 列 —— 窄窗口下（JS 可能算 2～3 列）
+     * 中间那次强制布局会让文档变矮，浏览器顺手把 scrollTop 夹小，看起来就是「页面往上跳」。
+     * 重绘结束后放回原位置，同一帧内完成，用户看不到闪动。
+     * 只想刷新单张卡片的场景走 refreshSenkaLineCard()，连整页重建都省了。
+     */
+    const keepY = host.childElementCount ? window.scrollY : null;
+
     const now = new Date();
     const plan = KC.calc.plan.forCurrentMonth(KC.store, now);
     const month = plan.month;
@@ -800,8 +874,11 @@
     const calendar = KC.calc.stats.monthCalendar(records, month, now);
 
     const settings = currentSettings();
-    // 战果线往期对比：数据在本机轻量存储里，按「当前槽」对齐前几个已结束月
-    const senkaLine = KC.senkaLineData.compareModel(settings.server, now);
+    // 战果线往期对比：数据在本机轻量存储里，按「当前槽」对齐前几个已结束月；
+    // 对齐方式（同进度点 / 距月末同天数）来自设置，切换后重算整张表
+    const senkaLine = KC.senkaLineData.compareModel(settings.server, now, {
+      mode: settings.senkaLineMode
+    });
     const sizes = KC.ui.normalizeCardSizes(settings);
     const info = { sizes: sizes, cols: 0, editing: pageState.editing, span: 0 };
 
@@ -845,6 +922,9 @@
     applyCardLayout(sizes);
     // 工具条文案含列数，且卡片列数就绪后才知道要提示几列，所以放在最后刷新
     buildToolbar();
+
+    // 列表 / 尺寸都落好了，把阅读位置放回去（见函数开头的注释）
+    if (keepY !== null && window.scrollY !== keepY) window.scrollTo(0, keepY);
   }
 
   /* -------------------------------------------------------- 导出提醒条 */
@@ -876,6 +956,54 @@
     render();
   }
 
+  /**
+   * 切换「战果线往期对比」的对齐方式。
+   *
+   * ⚠️ 刻意**不整页重绘**：store 的 change 会触发 render()，那条路会重建整页 DOM
+   * （卡片网格的 `--dash-cols` 要等 applyCardLayout 才写回，中途的强制布局会把
+   * scrollTop 夹小，窄窗口下看上去就是「点一下页面往上跳」，详见 render() 开头的注释）。
+   * 所以这段用 quiet 门闩挡掉那一次全量重绘，只换这张卡片的 body。
+   */
+  async function setSenkaAlignMode(mode) {
+    const next = KC.calc.senkaLine.normalizeAlign(mode);
+    if (next === KC.calc.senkaLine.normalizeAlign(currentSettings().senkaLineMode)) return;
+    pageState.quiet++;
+    try {
+      await KC.store.saveSettings({ senkaLineMode: next });
+    } catch (err) {
+      KC.toast('保存对齐方式失败：' + err.message, 'error');
+      return;
+    } finally {
+      // clamp 到 0：这期间如果页面被 unmount + 重新 mount（mount 会把 quiet 归零），
+      // 直接减一就会变成负数，之后所有 change 都被这道门闩挡住。
+      pageState.quiet = Math.max(0, pageState.quiet - 1);
+    }
+    refreshSenkaLineCard(next);
+  }
+
+  /**
+   * 只重绘「战果线往期对比」这一张卡片的内容（不动页面其余 DOM，滚动位置自然保持）。
+   * 找不到卡片（被用户在设置里隐藏 / DOM 结构不符）时退回整页重绘，保证内容不会过期。
+   */
+  function refreshSenkaLineCard(mode) {
+    const host = pageState.container;
+    if (!host) return;
+    const card = KC.dom.qs('[data-card-id="senkaLineCompare"]', host);
+    const body = card ? KC.dom.qs('.card-body', card) : null;
+    if (!body) { render(); return; }
+
+    const settings = currentSettings();
+    body.innerHTML = senkaLinePanel(KC.senkaLineData.compareModel(settings.server, new Date(), {
+      mode: KC.calc.senkaLine.normalizeAlign(mode || settings.senkaLineMode)
+    }));
+
+    // 重绘把按钮换成了新节点，焦点要还给同一档，否则键盘操作会被打断。
+    // preventScroll：万一按钮不在视口正中，focus 也别把页面拽走。
+    const btn = KC.dom.qs('[data-act="senka-mode"][data-mode="' +
+      KC.calc.senkaLine.normalizeAlign(mode || settings.senkaLineMode) + '"]', body);
+    if (btn && typeof btn.focus === 'function') btn.focus({ preventScroll: true });
+  }
+
   /* -------------------------------------------------------------- 交互 */
 
   function handleClick(e) {
@@ -888,6 +1016,8 @@
     if (act === 'dash-done') { exitEdit(); return; }
     if (act === 'dash-reset') { resetLayout(); return; }
     if (act === 'set-card-size') { setCardSize(btn.dataset.id, btn.dataset.size); return; }
+
+    if (act === 'senka-mode') { setSenkaAlignMode(btn.dataset.mode); return; }
 
     if (act === 'export-now') { exportNow(); return; }
     if (act === 'export-dismiss') { dismissExportNotice(); return; }
@@ -907,6 +1037,7 @@
       pageState.container = container;
       pageState.editing = false;
       pageState.dragId = null;
+      pageState.quiet = 0;
 
       handlers = {
         click: handleClick,
@@ -921,7 +1052,9 @@
       window.addEventListener('resize', onWinResize);
 
       unsubscribe = KC.store.subscribe(function (type) {
-        if (type === 'change') render();
+        if (type !== 'change') return;
+        if (pageState.quiet > 0) return;   // 局部刷新中，别整页重绘（会丢滚动位置）
+        render();
       });
       render();
     },
@@ -938,6 +1071,7 @@
       pageState.container = null;
       pageState.editing = false;
       pageState.dragId = null;
+      pageState.quiet = 0;
     }
   };
 })(window.KC = window.KC || {});

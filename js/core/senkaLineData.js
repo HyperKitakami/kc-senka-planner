@@ -158,27 +158,37 @@
    *
    * 口径：
    *   · 取「最近 n 个**已结束**月」—— wiki 当月页在当月不存在（实测），当月取不到；
-   *   · 每个月取两个值：**同槽值**（与当前进度同槽，槽未发布时回退上一次）
+   *   · 每个月取两个值：**对齐值**（按 `opts.mode` 对齐到的那个槽，槽未发布时回退上一次）
    *     与**月末值**（该月最后一槽）；
    *   · 缺数据的月份由 calc.senkaLine.compareMonths 跳过，不画空列。
    *
+   * 对齐方式（`opts.mode`，两种都只影响取哪个槽，不改变「涨幅 = 月末值 − 对齐值」）：
+   *   · 'slot'（默认）同进度点：对齐到与当前**相同的槽号**（同一天同一时段）；
+   *   · 'remaining' 距月末同天数：从该月**月末**往回数，对齐到与本月剩余槽数相同的位置。
+   *     往月比本月短到对不齐时，该月 `targetSlot = null`（`unreachable = true`），
+   *     UI 只给月末值、不给涨幅 —— 见 calc.senkaLine.alignSlot 的注释。
+   *
    * @param {string} serverCode 服务器编号（Settings.server）
    * @param {Date} [now]
-   * @param {{months?:number, maxLookback?:number}} [opts]
+   * @param {{months?:number, maxLookback?:number, mode?:string}} [opts]
    * @returns {object} 始终返回对象（无数据时 months 为空数组），便于 UI 分支
    */
   function compareModel(serverCode, now, opts) {
     opts = opts || {};
     const at = now || new Date();
-    const cur = KC.calc.senkaLine.currentSlot(at);
+    const SL = KC.calc.senkaLine;
+    const mode = SL.normalizeAlign(opts.mode);
+    const cur = SL.currentSlot(at);
+    const remaining = SL.remainingSlots(cur.month, cur.slot);
     const saved = monthsOf(serverCode);
-    const pick = KC.calc.senkaLine.compareMonths(at, opts.months || 3, saved, opts.maxLookback);
+    const pick = SL.compareMonths(at, opts.months || 3, saved, opts.maxLookback);
 
     const items = pick.months.map(function (month) {
       const snap = read(serverCode, month);
       const rows = (snap && snap.rows) || [];
-      const same = KC.calc.senkaLine.pickAtOrBefore(rows, cur.slot);
-      const end = KC.calc.senkaLine.pickMonthEnd(rows, month);
+      const targetSlot = SL.alignSlot(month, cur.month, cur.slot, mode);
+      const same = targetSlot === null ? null : SL.pickAtOrBefore(rows, targetSlot);
+      const end = SL.pickMonthEnd(rows, month);
       return {
         month: month,
         rowCount: rows.length,
@@ -186,8 +196,16 @@
         warnings: (snap && snap.warnings) || [],
         same: same,
         end: end,
-        /** 同槽取的日期文案（如 '29 日 前半日'），槽回退到月末时与 usedSlot 一致 */
-        sameLabel: same ? KC.calc.senkaLine.slotLabel(month, same.usedSlot) : ''
+        /** 对齐到的槽号；null = 该月太短，按当前模式对不齐 */
+        targetSlot: targetSlot,
+        /** 该月是否因长度不足而无法按「距月末同天数」对齐 */
+        unreachable: targetSlot === null,
+        /** 对齐点实际取到的槽（槽未发布 / 缺数据时会早于 targetSlot） */
+        usedSlot: same ? same.usedSlot : null,
+        /** 对齐取的日期文案（如 '29 日 前半日'），对不齐时为空串 */
+        sameLabel: same
+          ? SL.slotLabel(month, same.usedSlot)
+          : (targetSlot === null ? '' : SL.slotLabel(month, targetSlot))
       };
     });
 
@@ -218,12 +236,17 @@
       serverCode: String(serverCode || ''),
       serverName: KC.schema.serverName(serverCode) || '',
       hasServer: isServerCode(serverCode),
+      /** 对齐方式：'slot' 同进度点 | 'remaining' 距月末同天数 */
+      mode: mode,
       /** 当前对齐的进度点 */
       current: {
         month: cur.month,
         slot: cur.slot,
         rolled: cur.rolled,
-        label: KC.calc.senkaLine.slotLabel(cur.month, cur.slot)
+        label: SL.slotLabel(cur.month, cur.slot),
+        /** 当前槽距本月月末还剩多少槽（半天）/ 折合天数（可能带 .5） */
+        remaining: remaining,
+        remainingDays: remaining / SL.SLOTS_PER_DAY
       },
       months: items,
       gaps: pick.gaps,

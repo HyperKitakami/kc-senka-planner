@@ -138,6 +138,65 @@
     return !!(end && end.isTrueMonthEnd);
   }
 
+  /* ------------------------------------------------------------ 对齐方式 */
+
+  /**
+   * 「往期对比」的对齐方式（首页卡片标题旁的切换）：
+   *
+   *   'slot'      同进度点 —— 与当前处于**同一个槽号**（同一天、同一时段）。
+   *               月份长度不同时，「离月末还有多久」并不相同。
+   *   'remaining' 距月末同天数 —— 从**该月月末**往回数同样的槽数。
+   *               对齐的是「离结算还剩多久」，因此月份长度不同时日期会不同。
+   *
+   * 两种方式算的涨幅都是「对齐点 → 该月月末」，只是对齐点不同。
+   */
+  const ALIGN_MODES = ['slot', 'remaining'];
+
+  /** 归一化对齐方式：不认识的值一律落回默认的 'slot'（同进度点） */
+  function normalizeAlign(mode) {
+    const v = String(mode || '');
+    return ALIGN_MODES.indexOf(v) >= 0 ? v : 'slot';
+  }
+
+  /** 某槽距该月月末还剩多少槽（半天）：0 = 已是该月最后一槽 */
+  function remainingSlots(monthKey, slot) {
+    const n = Math.max(0, Math.round(Number(slot) || 0));
+    return Math.max(0, lastSlotOf(monthKey) - n);
+  }
+
+  /**
+   * 「距月末同天数」在某月对应的槽号 = 该月末槽 − 剩余槽数。
+   * @returns {number|null} 该月太短、对齐点落在月首之前（目标槽 < 0）时返回 null
+   */
+  function slotByRemaining(monthKey, remaining) {
+    const r = Math.round(Number(remaining));
+    if (!isFinite(r) || r < 0) return null;
+    const target = lastSlotOf(monthKey) - r;
+    return target < 0 ? null : target;
+  }
+
+  /**
+   * 按对齐方式算出「往月要对齐到哪个槽」。
+   *
+   * ⚠️ 返回 null 只可能出现在 'remaining' 下：本月剩余的天数比该月总长度还多
+   *    （本月是大月，往月是 2 月之类的短月，且当前处于月首几天）。
+   *    此时**不能**退化为「取月首那一槽」——那等于拿「剩余更多」的值去比，
+   *    涨幅会被系统性放大，必须让 UI 显示为无法对齐。
+   *
+   * @param {string} monthKey 往月
+   * @param {string} curMonth 当前槽所在月
+   * @param {number} curSlot 当前槽
+   * @param {string} [mode] 'slot' | 'remaining'
+   * @returns {number|null}
+   */
+  function alignSlot(monthKey, curMonth, curSlot, mode) {
+    if (normalizeAlign(mode) === 'remaining') {
+      return slotByRemaining(monthKey, remainingSlots(curMonth, curSlot));
+    }
+    const n = Math.round(Number(curSlot));
+    return isFinite(n) && n >= 0 ? n : 0;
+  }
+
   /**
    * 取对比用的「前 n 个月」。
    *
@@ -177,6 +236,7 @@
     ORIGIN_HOUR: ORIGIN_HOUR,
     SLOTS_PER_DAY: SLOTS_PER_DAY,
     SLOT_LABEL_HALF: SLOT_LABEL_HALF,
+    ALIGN_MODES: ALIGN_MODES,
     slotOrigin: slotOrigin,
     lastSlotOf: lastSlotOf,
     slotTimeOf: slotTimeOf,
@@ -187,6 +247,10 @@
     pickAtOrBefore: pickAtOrBefore,
     pickMonthEnd: pickMonthEnd,
     coversMonthEnd: coversMonthEnd,
+    normalizeAlign: normalizeAlign,
+    remainingSlots: remainingSlots,
+    slotByRemaining: slotByRemaining,
+    alignSlot: alignSlot,
     compareMonths: compareMonths
   };
 })(window.KC = window.KC || {});
