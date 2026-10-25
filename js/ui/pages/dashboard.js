@@ -523,8 +523,6 @@
         '<thead><tr><th>位次</th>' + cols + '</tr></thead>' +
         '<tbody>' + body + '</tbody>' +
       '</table></div>' +
-      (isRemaining ? '<div class="panel-desc">「距月末同天数」从各月月末往回数，' +
-        '取与本月剩余天数相同的采样点；月份长度不同时，对齐到的日期也不同（见各列表头）。</div>' : '') +
       (notes.length ? '<div class="panel-desc">' + U.escapeHtml(notes.join('；')) + '。</div>' : '') +
       '<div class="panel-foot">' +
         '<span class="rl-legend">每格：' +
