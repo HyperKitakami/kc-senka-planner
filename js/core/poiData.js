@@ -126,7 +126,7 @@
     return KC.localLayer.remove(snapshotName(monthKeyStr));
   }
 
-  /** 清空全部 poi 快照 + 元信息（设置页的「清除 poi 快照」用它） */
+  /** 清空全部 poi 快照 + 元信息（数据管理页的「清除 poi 快照」用它） */
   function clearAll() {
     const removed = KC.localLayer.prune(nsPrefix(), []);
     KC.localLayer.remove(META_KEY);

@@ -103,7 +103,7 @@
 
   /**
    * 全部已存数据的摘要（按服务器、月份升序）。
-   * 只读元信息，不返回 rows —— 设置页列表用得到。
+   * 只读元信息，不返回 rows —— 数据管理页的列表用得到。
    * @returns {Array<{serverCode, serverName, month, importedAt, count, source, warnings}>}
    */
   function list() {
@@ -144,7 +144,7 @@
     return KC.localLayer.prune(nsPrefix(), []);
   }
 
-  /** 本层占用字节数（UTF-16 口径），设置页展示用 */
+  /** 本层占用字节数（UTF-16 口径），数据管理页展示用 */
   function usage() {
     let bytes = 0;
     KC.localLayer.keys(nsPrefix()).forEach(function (k) {
@@ -194,7 +194,7 @@
     /**
      * 诊断：被跳过的月份里，哪些**其实本地已经有、只是记在别的服务器名下**。
      *
-     * 这是最容易让人误判成"没数据"的一种情形 —— 因为设置页的「已采集」汇总是
+     * 这是最容易让人误判成"没数据"的一种情形 —— 因为数据管理页的「已采集」汇总是
      * 跨全部服务器的，而卡片只认当前服务器（docs/02_ui.md §4.1.1）。
      * 把这个信息交给 UI，卡片才能给出「请检查服务器设置」这类可操作的提示，
      * 而不是干巴巴一句"本地没有这些月份的数据"。

@@ -383,10 +383,16 @@
       return '<div class="panel-head"><h2>战果线往期对比</h2>' +
         '<span class="panel-count">' + U.escapeHtml(count) + '</span></div>';
     }
-    function guide(text, label) {
+    /**
+     * 无数据时的引导行。
+     * act 决定按钮去哪一页：服务器相关去「设置」，采集 / 管理战果线去「数据管理」
+     * （战果线数据面板 2026-10-25 从设置页迁到了数据管理页）。
+     */
+    function guide(text, label, act) {
       return '<div class="panel">' + head('需要先准备数据') +
         '<div class="empty-inline">' + U.escapeHtml(text) +
-        '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-settings">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="' +
+        U.escapeHtml(act || 'goto-settings') + '">' +
         U.escapeHtml(label) + '</button></div></div>';
     }
 
@@ -402,7 +408,8 @@
           '请到设置页确认「游戏服务器」选的是不是你实际所在的镇守府。', '去检查');
       }
       return guide('还没有采集过「' + model.serverName + '」的战果线数据。' +
-        '到设置页「战果线数据」复制提取脚本，在 wiki 页面上跑一次再粘回来。', '去采集');
+        '到「数据管理」页的「战果线数据」复制提取脚本，在 wiki 页面上跑一次再粘回来。',
+        '去采集', 'goto-data');
     }
 
     const cols = model.months.map(function (m) {
@@ -459,7 +466,7 @@
       (notes.length ? '<div class="panel-desc">' + U.escapeHtml(notes.join('；')) + '。</div>' : '') +
       '<div class="panel-foot">' +
         '<span class="rl-legend">每格：同槽值 → 该月月末值 +涨幅</span>' +
-        '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-settings">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="goto-data">' +
           '采集 / 管理数据</button>' +
       '</div>' +
       '</div>';
@@ -890,6 +897,7 @@
     else if (act === 'goto-planning') KC.router.navigate('planning');
     else if (act === 'goto-tasks') KC.router.navigate('tasks');
     else if (act === 'goto-settings') KC.router.navigate('settings');
+    else if (act === 'goto-data') KC.router.navigate('data');
   }
 
   /* -------------------------------------------------------------- 生命周期 */
