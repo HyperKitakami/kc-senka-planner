@@ -4,16 +4,16 @@
         docs/06_data_strategy.md §2.2 / §4.2。
 
    职责：
-     · 保存每月最终结果（最终战果、排名、奖励区间、奖励线、奖励装备、备注）
+     · 保存每月最终结果（最终榜单战果、排名、奖励区间、奖励线、奖励装备、备注）
      · 长期查询：列表 + 详情
      · 列表分页：单页条数可选 10 / 20 / 50（偏好存 settings.archivePageSize）
      · 列表筛选：按年份 / 奖励区间过滤（只作用于列表，统计卡始终按全量算）
      · 人事表：按「归档月份 + 设置中的服务器」自动生成图片地址，不落库
-     · 「计算战果」：按该月原始记录实时算出，作为独立一项与「最终战果」并列展示
+     · 「计算战果」：按该月原始记录实时算出，作为独立一项与「最终榜单战果」并列展示
    注意：
      · Archive 仅作结果快照，**不作为统计计算来源**
      · 「计算战果」是运行时计算值，**不保存入 Archive**（docs/03_data.md Archive 说明）
-     · 月度最终战果以当月末日 21:00 的战果结算为准，由用户录入，不由计算值填充
+     · 月度最终榜单战果以当月末日 21:00 结算为准，由用户录入，不由计算值填充
    ========================================================================== */
 (function (KC) {
   'use strict';
@@ -37,7 +37,14 @@
     page: 1,               // 列表当前页（1 起，仅本次会话有效）
     pageSize: DEFAULT_PAGE_SIZE,  // 每页条数，mount 时取自 settings.archivePageSize
     filterYear: '',        // '' = 全部年份，否则 'YYYY'（仅本次会话有效）
-    filterTier: ''         // '' = 全部奖励区间，否则 REWARD_TIERS 的 key 或 TIER_NONE
+    filterTier: '',        // '' = 全部奖励区间，否则 REWARD_TIERS 的 key 或 TIER_NONE
+    /**
+     * 上一次由「战果线自动填入」写进奖励线输入框的字符串（null = 还没自动填过）。
+     * 用来区分「这个值是程序填的」与「这个值是用户手写的」：
+     * 只有空值和程序自己填的值才允许被下一次自动填入覆盖，手写值一律不动。
+     * renderForm() 重建表单时重置。
+     */
+    autoLine: null
   };
 
   let unsubscribe = null;
@@ -337,7 +344,7 @@
 
       body = '<div class="table-wrap"><table class="data-table">' +
         '<thead><tr>' +
-          '<th>月份</th><th class="col-senka">最终战果</th><th class="col-senka">计算战果</th>' +
+          '<th>月份</th><th class="col-senka">最终榜单战果</th><th class="col-senka">计算战果</th>' +
           '<th class="num">排名</th>' +
           '<th>奖励区间</th><th class="num">奖励线（差值）</th><th class="actions">操作</th>' +
         '</tr></thead>' +
@@ -345,7 +352,7 @@
         '</table></div>' +
         pagerHtml(pg) +
         '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
-          '不保存入归档；括号内为它与「最终战果」的差值。</p>';
+          '不保存入归档；括号内为它与「最终榜单战果」的差值。</p>';
     }
 
     host.innerHTML = '<div class="panel">' +
@@ -393,14 +400,14 @@
       '</div>' +
 
       '<div class="table-wrap"><table class="data-table detail-table"><tbody>' +
-        row('最终战果（末日 21:00 结算）', '<span class="cell-num">' + U.formatNumber(a.finalSenka) + '</span>') +
+        row('最终榜单战果（末日 21:00 结算）', '<span class="cell-num">' + U.formatNumber(a.finalSenka) + '</span>') +
         row('计算战果（按原始记录实时计算）',
           '<span class="cell-num">' + U.formatNumber(live) + '</span>' +
           (Math.abs(drift) < 0.005
-            ? '<span class="muted"> 与最终战果一致</span>'
+            ? '<span class="muted"> 与最终榜单战果一致</span>'
             : diffHtml(drift) +
-              '<div class="detail-note">与最终战果相差 ' + (drift > 0 ? '+' : '') +
-              U.formatNumber(drift) + '（' + (drift > 0 ? '最终战果偏低' : '最终战果偏高') + '）</div>')) +
+              '<div class="detail-note">与最终榜单战果相差 ' + (drift > 0 ? '+' : '') +
+              U.formatNumber(drift) + '（' + (drift > 0 ? '最终榜单战果偏低' : '最终榜单战果偏高') + '）</div>')) +
         row('排名', a.rank === null ? '<span class="muted">未记录</span>' : String(a.rank)) +
         row('奖励区间', tier
           ? U.escapeHtml(tier.label) +
@@ -418,7 +425,7 @@
       '</tbody></table></div>' +
 
       '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
-        '不保存入归档；「最终战果」是记录的末日 21:00 结算值。两者不一致时上方会标出差值。' +
+        '不保存入归档；「最终榜单战果」是记录的末日 21:00 结算值。两者不一致时上方会标出差值。' +
       '</p>' +
       '</div>';
   }
@@ -428,6 +435,9 @@
     if (!host) return;
 
     if (!pageState.formOpen) { host.innerHTML = ''; return; }
+
+    // 表单重建 = 奖励线输入框回到 a.rewardLine，自动填入的追踪标记随之作废
+    pageState.autoLine = null;
 
     const editing = pageState.editingMonth ? KC.store.getArchive(pageState.editingMonth) : null;
     if (pageState.editingMonth && !editing) {
@@ -459,7 +469,7 @@
     host.innerHTML = '<div class="panel">' +
       '<div class="panel-head">' +
         '<h2>' + (editing ? '编辑归档' : '新建归档') + '</h2>' +
-        '<span class="panel-count">最终战果以当月末日 21:00 结算为准</span>' +
+        '<span class="panel-count">最终榜单战果以当月末日 21:00 结算为准</span>' +
       '</div>' +
       '<form class="task-form" id="archive-form" novalidate>' +
 
@@ -470,7 +480,7 @@
               (editing ? ' readonly' : '') + ' required>' +
           '</label>' +
           '<label class="field">' +
-            '<span class="field-label">最终战果</span>' +
+            '<span class="field-label">最终榜单战果</span>' +
             '<input type="number" name="finalSenka" step="0.01" min="0" placeholder="例如 3200.00" value="' +
               U.escapeHtml(a.finalSenka === null ? '' : a.finalSenka) + '" required>' +
           '</label>' +
@@ -494,7 +504,7 @@
             '<span class="field-label">奖励区间</span>' +
             '<select name="rewardTier" data-act="form-tier">' + tierOptions + '</select>' +
           '</label>' +
-          '<label class="field" data-cond="combined">' +
+          '<label class="field field-check" data-cond="combined">' +
             '<span class="field-label">&nbsp;</span>' +
             '<span class="check"><input type="checkbox" name="rewardFirst"' +
               (a.rewardFirst ? ' checked' : '') + '> 联合区间第 1 名（人事）</span>' +
@@ -505,6 +515,8 @@
               U.escapeHtml(a.rewardLine === null ? '' : a.rewardLine) + '">' +
           '</label>' +
         '</div>' +
+
+        '<p class="form-hint" id="archive-line-hint" hidden></p>' +
 
         '<label class="field">' +
           '<span class="field-label">奖励装备（每行一条）</span>' +
@@ -529,6 +541,7 @@
 
     toggleFormConditional(a.rewardTier);
     refreshMonthNotice();
+    syncAutoRewardLine();
   }
 
   /**
@@ -550,7 +563,7 @@
 
     hint.hidden = !dup;
     hint.textContent = dup
-      ? '该月已有归档（最终战果 ' + U.formatNumber(dup.finalSenka) + '）'
+      ? '该月已有归档（最终榜单战果 ' + U.formatNumber(dup.finalSenka) + '）'
       : '';
   }
 
@@ -560,6 +573,104 @@
     KC.dom.qsa('[data-cond]', host).forEach(function (el) {
       el.hidden = el.dataset.cond !== tierKey;
     });
+  }
+
+  /**
+   * 新建归档：选好「奖励区间」后，若该月有战果线数据，把该区间对应的**月末战果线**
+   * 自动填入「官方对应奖励线」（docs/02_ui.md §4.7）。
+   *
+   * 三条口径（都与 docs 里写的一致，改任一处要同步改文档与回归测试）：
+   *   1. **只在新建时自动填**。编辑归档是对既有快照的修正，已记录的奖励线是用户
+   *      确认过的值，不做程序覆盖。
+   *   2. **只覆盖空值与上一次自动填入的值**（pageState.autoLine）。用户手写过的
+   *      数字一律保留，并在提示条里说明"没有覆盖"——静默改用户输入是数据事故。
+   *   3. 值取该月**月末槽**的战果线；一个区间只对应一条线（联合 → 5 位、一群 → 20 位、
+   *      二群 → 100 位、三群 → 500 位）。特务 / 田选没有对应位次列（站点只给
+   *      1 / 5 / 20 / 100 / 500 位），不填也不拿别的位次顶替。
+   *      「联合区间第 1 名（人事）」只是归档上的标记，**不参与**取线（仍取 5 位线）。
+   *
+   * 取不到值不算错误：提示条说明原因，奖励线仍由用户手动填写，保存流程不受影响。
+   */
+  function syncAutoRewardLine() {
+    const host = slot('archive-form-slot');
+    if (!host) return;
+    const lineInput = host.querySelector('input[name="rewardLine"]');
+    const tierSel = host.querySelector('select[name="rewardTier"]');
+    const hintEl = host.querySelector('#archive-line-hint');
+    if (!lineInput || !tierSel || !hintEl) return;
+
+    function hint(text) {
+      hintEl.hidden = false;
+      hintEl.textContent = text;
+    }
+    function quiet() {
+      hintEl.hidden = true;
+      hintEl.textContent = '';
+    }
+    /**
+     * 撤掉「上一次自动填入」的值：只清**程序自己填的**，手写值一概不动。
+     * 换到取不到值的区间（特务 / 田选 / 该月无数据 / 缺该列）时必须调用 ——
+     * 否则输入框里会留着上一个区间的线，看起来像是本区间的值。
+     */
+    function dropAuto() {
+      if (pageState.autoLine !== null && String(lineInput.value || '') === pageState.autoLine) {
+        lineInput.value = '';
+      }
+      pageState.autoLine = null;
+    }
+
+    const tierKey = String(tierSel.value || '');
+    if (!tierKey || pageState.editingMonth) { dropAuto(); quiet(); return; }
+
+    const monthInput = host.querySelector('input[name="month"]');
+    const month = String((monthInput && monthInput.value) || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) { quiet(); return; }
+
+    const rankKey = KC.senkaLineSource.rankKeyOfTier(tierKey);
+    if (!rankKey) {
+      dropAuto();
+      hint('特务 / 田选没有对应的战果线位次（站点只提供 1 / 5 / 20 / 100 / 500 位），' +
+        '奖励线请手动填写。');
+      return;
+    }
+    const rank = KC.senkaLineSource.rankOf(rankKey);
+    // 提示里的线名用区间名（联合 / 一群 / 二群 / 三群）
+    const lineName = rank ? rank.short : tierShort(tierKey);
+
+    const server = KC.store.getSettings().server || '';
+    if (!/^\d{2}$/.test(String(server))) {
+      dropAuto();
+      hint('尚未在「设置 → 游戏服务器」中选择服务器，取不到该月的战果线数据。');
+      return;
+    }
+
+    const line = KC.senkaLineData.monthEndLine(server, month, tierKey);
+    if (!line) {
+      dropAuto();
+      hint('该月没有战果线数据（可在「数据管理 → 战果线数据」导入），奖励线请手动填写。');
+      return;
+    }
+    if (line.value === null) {
+      dropAuto();
+      hint('该月战果线数据缺少「' + lineName + '」这一列的数值，奖励线请手动填写。');
+      return;
+    }
+
+    const text = String(U.round2(line.value));
+    const cur = String(lineInput.value || '');
+    const keepManual = cur !== '' && cur !== pageState.autoLine;
+
+    if (keepManual) {
+      pageState.autoLine = null;
+      hint('奖励线保留你手动填写的值（未按战果线覆盖）；该月「' + lineName +
+        '」的月末战果线为 ' + U.formatNumber(line.value) + '。');
+    } else {
+      lineInput.value = text;
+      pageState.autoLine = text;
+      hint('已按该月「' + lineName + '」战果线填入 ' + U.formatNumber(line.value) +
+        ' · 取 ' + KC.calc.senkaLine.slotLabel(month, line.usedSlot) + '的值' +
+        (line.isTrueMonthEnd ? '。' : '；数据止于这一槽，不是真正的月末值，请核对。'));
+    }
   }
 
   function renderAll() {
@@ -599,7 +710,7 @@
     submitLock = true;
     const ok = await KC.confirmDialog({
       title: '该月份已有归档',
-      message: U.monthLabel(month) + ' 已存在归档记录（最终战果 ' +
+      message: U.monthLabel(month) + ' 已存在归档记录（最终榜单战果 ' +
         U.formatNumber(exist.finalSenka) + '）。\n' +
         '继续保存将用当前表单内容覆盖该月归档，被覆盖的内容不可恢复。',
       okText: '覆盖保存',
@@ -729,8 +840,13 @@
   function handleChange(e) {
     const el = e.target;
     if (!el || !el.dataset) return;
-    if (el.dataset.act === 'form-tier') toggleFormConditional(el.value);
-    else if (el.dataset.act === 'form-month') { refreshCalcSenka(); refreshMonthNotice(); }
+    if (el.dataset.act === 'form-tier') { toggleFormConditional(el.value); syncAutoRewardLine(); }
+    else if (el.dataset.act === 'form-month') {
+      refreshCalcSenka();
+      refreshMonthNotice();
+      // 换了月份，自动填入的战果线也要跟着换（手写值仍然不动，见 syncAutoRewardLine）
+      syncAutoRewardLine();
+    }
     else if (el.dataset.act === 'filter-year' || el.dataset.act === 'filter-tier') {
       if (el.dataset.act === 'filter-year') pageState.filterYear = String(el.value || '');
       else pageState.filterTier = String(el.value || '');
@@ -753,7 +869,7 @@
       '<div class="page-head">' +
         '<div>' +
           '<h1>历史归档</h1>' +
-          '<p class="page-sub">保存每月最终结果（最终战果、排名、奖励区间与奖励装备），供长期查询。' +
+          '<p class="page-sub">保存每月最终结果（最终榜单战果、排名、奖励区间与奖励装备），供长期查询。' +
             '归档仅作快照，不参与统计计算；「计算战果」由原始记录实时算出，不写入归档。</p>' +
         '</div>' +
         '<button type="button" class="btn btn-primary" data-act="new-archive">+ 新建归档</button>' +

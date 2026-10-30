@@ -262,10 +262,55 @@
     };
   }
 
+  /**
+   * 某「服务器 × 月份」按奖励区间取出的**月末战果线** —— 历史归档「新建」时
+   * 自动填入「官方对应奖励线」用的那个值（docs/02_ui.md §4.7）。
+   *
+   * 口径：
+   *   · 位次列由 senkaLineSource.rankKeyOfTier 决定（5/20/100/500 位 = 联合 / 一群 /
+   *     二群 / 三群）；**特务 / 田选没有对应位次列**，返回 null，
+   *     绝不拿 500 位顶替 —— 那会把奖励线报高。
+   *     1 位（人事）线也不参与：人事只是归档上的标记，不改变所属区间的奖励线。
+   *   · 取该月**月末槽**的值（calc.senkaLine.pickMonthEnd）。数据被截断时取末行，
+   *     并在 isTrueMonthEnd 里标 false，由调用方决定怎么提示，不静默当成月末值。
+   *   · 该列在这行里没有数值时 value=null（不伪造 0）。
+   *
+   * @param {string} serverCode '01'～'20'
+   * @param {string} monthKey 'YYYY-MM'
+   * @param {string} tierKey schema.REWARD_TIERS 的 key
+   * @returns {null|{serverCode:string, month:string, tierKey:string, rankKey:string,
+   *   value:number|null, usedSlot:number, isTrueMonthEnd:boolean, monthEndSlot:number}}
+   *   null = 没有该月数据 / 该区间没有对应位次列
+   */
+  function monthEndLine(serverCode, monthKey, tierKey) {
+    if (!isServerCode(serverCode) || !isMonthKey(monthKey)) return null;
+    const rankKey = KC.senkaLineSource.rankKeyOfTier(tierKey);
+    if (!rankKey) return null;
+    const snap = read(serverCode, monthKey);
+    const rows = (snap && snap.rows) || [];
+    if (!rows.length) return null;
+    const end = KC.calc.senkaLine.pickMonthEnd(rows, monthKey);
+    if (!end) return null;
+    const raw = end.row[rankKey];
+    const n = Number(raw);
+    const value = (raw === null || raw === undefined || raw === '' || !isFinite(n)) ? null : n;
+    return {
+      serverCode: String(serverCode),
+      month: String(monthKey),
+      tierKey: String(tierKey),
+      rankKey: rankKey,
+      value: value,
+      usedSlot: end.usedSlot,
+      isTrueMonthEnd: end.isTrueMonthEnd,
+      monthEndSlot: KC.calc.senkaLine.lastSlotOf(monthKey)
+    };
+  }
+
   KC.senkaLineData = {
     SNAP_PREFIX: SNAP_PREFIX,
     snapshotName: snapshotName,
     compareModel: compareModel,
+    monthEndLine: monthEndLine,
     save: save,
     read: read,
     monthsOf: monthsOf,

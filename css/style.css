@@ -717,7 +717,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .data-table .actions, .data-table th.actions { text-align: right; white-space: nowrap; }
 
 /* 战果值列：表头与数值统一居中，保证上下对齐。
-   用于 战果记录「当日出击战果」/ 战果任务「战果值」/ 历史归档「最终战果」。 */
+   用于 战果记录「当日出击战果」/ 战果任务「战果值」/ 历史归档「最终榜单战果」。 */
 .data-table .col-senka { text-align: center; font-weight: 600; }
 
 .row-today { background: var(--gold-soft); }
@@ -931,6 +931,14 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 
 .check input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+
+/* 放在 .field 里、与输入框并排的勾选项（如归档表单的「联合区间第 1 名（人事）」）。
+   .form-row 是 align-items: flex-end，而勾选块只有一行文字高（≈18px）——
+   底部对齐会让它相对 38px 的输入框显得偏下。这里让它跟着整行拉高（align-self: stretch），
+   再让勾选块吃掉标签之外剩余的高度并由 .check 自己的 align-items: center 居中，
+   视觉基线与相邻的 select / input 对齐。刻意不写死高度：输入框高度将来变了也不用改这里。 */
+.field-check { align-self: stretch; }
+.field-check .check { flex: 1; }
 
 /* 数据分析页「月度比较」的数据项勾选：顺序与堆叠顺序一致 */
 .metric-toggles {

@@ -36,16 +36,48 @@
    * `short` / `tier` 是与奖励区间对照用的文案（1 位=人事线，5/20/100/500 位
    * 分别对应联合 / 一群 / 二群 / 三群），划分与 schema.REWARD_TIERS 一致。
    * 刻意只在这里定义一次，UI 与计算层都从这里取，避免两处各写一份而漂移。
+   *
+   * `tierKey` 是**机器可读**的那一份对应关系（= schema.REWARD_TIERS 的 key），
+   * 供「归档新建时按奖励区间取该月战果线」用（rankKeyOfTier）。
+   * ⚠️ **1 位（人事）线刻意没有 tierKey**：归档上的「联合区间第 1 名（人事）」只是
+   *    一个标记，不改变所属区间的奖励线；自动填入一律按区间本身取线（联合 → 5 位）。
+   * ⚠️ 特务 / 田选**没有**对应的位次列：站点只给 1 / 5 / 20 / 100 / 500 位，
+   *    特务（600～1000 名）与田选都落在 500 位之外，拿 500 位顶替会把奖励线报高。
    */
   const RANKS = [
     { key: 'r1',   label: '1位',   short: '人事线', rank: 1,   tier: '第 1 名（人事）' },
-    { key: 'r5',   label: '5位',   short: '联合',   rank: 5,   tier: '联合（1～5 名）' },
-    { key: 'r20',  label: '20位',  short: '一群',   rank: 20,  tier: '一群（6～20 名）' },
-    { key: 'r100', label: '100位', short: '二群',   rank: 100, tier: '二群（21～100 名）' },
-    { key: 'r500', label: '500位', short: '三群',   rank: 500, tier: '三群（101～500 名）' }
+    { key: 'r5',   label: '5位',   short: '联合',   rank: 5,   tier: '联合（1～5 名）',
+      tierKey: 'combined' },
+    { key: 'r20',  label: '20位',  short: '一群',   rank: 20,  tier: '一群（6～20 名）',
+      tierKey: 't1' },
+    { key: 'r100', label: '100位', short: '二群',   rank: 100, tier: '二群（21～100 名）',
+      tierKey: 't2' },
+    { key: 'r500', label: '500位', short: '三群',   rank: 500, tier: '三群（101～500 名）',
+      tierKey: 't3' }
   ];
   const RANK_KEYS = RANKS.map(function (r) { return r.key; });
   const RANK_LABELS = RANKS.map(function (r) { return r.label; });
+
+  /**
+   * 奖励区间（schema.REWARD_TIERS 的 key）→ 战果线位次列 key。
+   *
+   * 一个区间最多对应一条线（联合 → 5 位、一群 → 20 位、二群 → 100 位、三群 → 500 位）；
+   * 人事虽然属于联合区间，但归档上只是标记，不参与这里的选择。
+   *
+   * @param {string} tierKey 'combined' | 't1' | 't2' | 't3' | 'tokumu' | 'tasen'
+   * @returns {string|null} 没有对应位次列时返回 null（特务 / 田选 / 未知区间）
+   */
+  function rankKeyOfTier(tierKey) {
+    const want = String(tierKey || '');
+    if (!want) return null;
+    const hit = RANKS.filter(function (r) { return r.tierKey === want; })[0];
+    return hit ? hit.key : null;   // 特务 / 田选 / 未知区间 → null
+  }
+
+  /** 按位次列 key 取那条线的元信息（label / short / rank）；没有返回 null */
+  function rankOf(key) {
+    return RANKS.filter(function (r) { return r.key === String(key || ''); })[0] || null;
+  }
 
   /** 采样行时刻：'YYYY/MM/DD HH:MM'（JST） */
   const ROW_TIME_RE = /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/;
@@ -406,6 +438,8 @@
     RANKS: RANKS,
     RANK_KEYS: RANK_KEYS,
     RANK_LABELS: RANK_LABELS,
+    rankKeyOfTier: rankKeyOfTier,
+    rankOf: rankOf,
     SAMPLE_HOURS: SAMPLE_HOURS,
     EXTRACT_SNIPPET: EXTRACT_SNIPPET,
     WIKI_INDEX_URL: WIKI_INDEX_URL,

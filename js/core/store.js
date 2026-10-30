@@ -697,7 +697,7 @@
     if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('月份格式不正确，应为 YYYY-MM。');
 
     // 必填数字：留空要报错，不能靠 Number('') === 0 静默存成 0
-    const finalSenka = KC.utils.requiredNumber(input && input.finalSenka, '最终战果');
+    const finalSenka = KC.utils.requiredNumber(input && input.finalSenka, '最终榜单战果');
 
     let rank = null;
     const rankRaw = input && input.rank;

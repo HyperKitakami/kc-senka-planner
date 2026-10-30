@@ -146,7 +146,7 @@
     if (!archive) return Promise.resolve(true);
     return confirmDialog({
       title: '该月份已归档',
-      message: U.monthLabel(month) + ' 已有归档记录（最终战果 ' +
+      message: U.monthLabel(month) + ' 已有归档记录（最终榜单战果 ' +
         U.formatNumber(archive.finalSenka) + '）。\n' +
         action + '会改变该月的实时计算结果，但不会自动更新归档快照。确定继续吗？',
       okText: '继续',

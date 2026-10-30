@@ -731,7 +731,7 @@
       message: '确定删除 ' + date + ' 的记录（当日出击战果 ' +
         U.formatNumber(record ? record.sortieSenka : 0) + '）吗？此操作不可撤销。' +
         (archive
-          ? '\n注意：该月已归档（最终战果 ' + U.formatNumber(archive.finalSenka) +
+          ? '\n注意：该月已归档（最终榜单战果 ' + U.formatNumber(archive.finalSenka) +
             '），删除会改变实时计算结果，但不会自动更新归档快照。'
           : ''),
       okText: '删除',
