@@ -919,7 +919,7 @@
     }
     return {
       label: '未被计入本月',
-      tip: '这笔' + what + '的完成时刻已过' + cutoff + '，按规则应计入 ' +
+      tip: '这笔' + what + '完成时刻不属于当前区间，按规则应计入 ' +
         U.monthLabel(n.targetMonth) + '，因此不参与 ' + U.monthLabel(n.month) + ' 的统计。' +
         '确实要算进本月请点「强制计入」。'
     };
