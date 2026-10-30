@@ -330,7 +330,8 @@
             : '<span class="muted">—</span>') + '</td>' +
           '<td class="num">' + (a.rewardLine === null
             ? '<span class="muted">—</span>'
-            : U.formatNumber(a.rewardLine) + diffHtml(a.lineDiff)) + '</td>' +
+            : U.formatNumber(a.rewardLine) +
+              diffHtml(U.round2(live - a.rewardLine))) + '</td>' +
           '<td class="actions">' +
             '<button type="button" class="btn btn-ghost btn-sm" data-act="view-archive" data-month="' +
               U.escapeHtml(a.month) + '">详情</button>' +
@@ -352,7 +353,8 @@
         '</table></div>' +
         pagerHtml(pg) +
         '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
-          '不保存入归档；括号内为它与「最终榜单战果」的差值。</p>';
+          '不保存入归档；计算战果列的括号是它与「最终榜单战果」的差值，' +
+          '奖励线列的括号是它与该奖励线的差值。</p>';
     }
 
     host.innerHTML = '<div class="panel">' +
@@ -378,6 +380,8 @@
     const tier = tierOf(a.rewardTier);
     const live = calcFinalSenka(a.month);
     const drift = U.round2(live - a.finalSenka);
+    /** 与奖励线的差值：口径是「计算战果 − 该月奖励线」，随原始记录实时变，不落库 */
+    const lineDrift = a.rewardLine === null ? null : U.round2(live - a.rewardLine);
 
     function row(label, value) {
       return '<tr><td>' + U.escapeHtml(label) + '</td><td>' + value + '</td></tr>';
@@ -417,7 +421,8 @@
           : '<span class="muted">未记录</span>') +
         row('官方对应奖励线', a.rewardLine === null
           ? '<span class="muted">未记录</span>'
-          : U.formatNumber(a.rewardLine) + diffHtml(a.lineDiff)) +
+          : U.formatNumber(a.rewardLine) + diffHtml(lineDrift) +
+            '<div class="detail-note">括号内为「计算战果 − 奖励线」</div>') +
         row('人事表', rankTableHtml(a.month)) +
         row('奖励装备', rewards) +
         row('月度备注', a.note ? U.escapeHtml(a.note) : '<span class="muted">—</span>') +
@@ -426,6 +431,7 @@
 
       '<p class="form-hint">「计算战果」按该月原始记录（继承 / 出击 / EO / 任务）实时计算，' +
         '不保存入归档；「最终榜单战果」是记录的末日 21:00 结算值。两者不一致时上方会标出差值。' +
+        '「官方对应奖励线」的括号是「计算战果 − 奖励线」，同样随原始记录实时算。' +
       '</p>' +
       '</div>';
   }

@@ -689,8 +689,12 @@
 
   /**
    * 归档记录规范化。
-   * 说明：lineDiff（与奖励线差值）由 finalSenka − rewardLine 自动得出，
-   * 属于 docs/03_data.md 中 Archive 的字段之一，随归档一起保存为快照。
+   *
+   * 说明：**「与奖励线差值」不落库**。它展示的是「计算战果 − 官方对应奖励线」，
+   * 而计算战果由该月原始记录实时算出（会随补录 / 改动变化），存成快照必然与页面
+   * 对不上，所以改由页面在渲染时算（docs/03_data.md Archive 说明）。
+   * ⚠️ v0.4.x 的旧记录里可能残留 `lineDiff`（当时 = finalSenka − rewardLine），
+   * 读出后一律忽略，不做迁移。
    */
   function normalizeArchive(input) {
     const month = String((input && input.month) || '').trim();
@@ -730,7 +734,6 @@
       // 「人事」仅对联合区间有意义
       rewardFirst: !!(input && input.rewardFirst) && rewardTier === 'combined',
       rewardLine: rewardLine,
-      lineDiff: rewardLine === null ? null : KC.utils.round2(finalSenka - rewardLine),
       rewards: rewards,
       note: String((input && input.note) || '').trim(),
       updatedAt: new Date().toISOString()
